@@ -1,19 +1,21 @@
-from fastapi import FastAPI, File, UploadFile, Request, HTTPException
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, RedirectResponse
-import pytesseract
-from PIL import Image, ImageEnhance
 import os
-import shutil
 import re
 from collections import Counter
 import pandas as pd
 from fuzzywuzzy import process, fuzz
+from functools import lru_cache
 import time
 import logging
-import mimetypes
+from fastapi import FastAPI, File, UploadFile, Request, HTTPException
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, RedirectResponse
+from PIL import Image, ImageEnhance
+import pytesseract
+import shutil
 from urllib.parse import quote
+import json
+from concurrent.futures import ThreadPoolExecutor
 
 # Configurer le logging
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +30,16 @@ except Exception as e:
     logger.error(f"Error loading INCI catalog: {str(e)}")
     chemical_db = []
 
-# Configurer le chemin de Tesseract de manière portable
+# Charger une liste réduite d'ingrédients courants
+try:
+    with open('static/common_inci.json', 'r') as f:
+        common_chemical_db = json.load(f)["common_ingredients"]
+    logger.info(f"Loaded common INCI catalog with {len(common_chemical_db)} entries")
+except FileNotFoundError:
+    common_chemical_db = chemical_db[:3000]
+    logger.warning("Common INCI list not found, using first 1000 entries")
+
+# Configurer le chemin de Tesseract
 TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
@@ -41,44 +52,44 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 def validate_image_path(image_path: str) -> bool:
-    """Valide que le chemin de l'image est dans UPLOAD_FOLDER."""
     abs_image_path = os.path.abspath(image_path)
     abs_upload_folder = os.path.abspath(UPLOAD_FOLDER)
     return abs_image_path.startswith(abs_upload_folder) and os.path.exists(image_path)
 
-def get_top_chemicals(query: str, chemical_db: list, top_n: int = 3, threshold: int = 85) -> str:
-    """
-    Find the top N closest matching chemical names from the database using fuzzy matching.
-    """
-    logger.debug(f"Fuzzy matching query: {query}")
-    if not chemical_db:
-        logger.warning("Chemical database is empty")
-        return "NF"
+@lru_cache(maxsize=1000)
+def get_top_chemicals(query: str, chemical_db_tuple: tuple, common_db_tuple: tuple, top_n: int = 3, threshold: int = 85) -> str:
+    chemical_db = list(chemical_db_tuple)
+    common_db = list(common_db_tuple)
+    query_lower = query.lower().strip()
+    print(f"Processing query: {query_lower}")
     
-    matches = process.extract(query, chemical_db, scorer=fuzz.WRatio, limit=top_n * 2)
-    logger.debug(f"Initial matches: {matches}")
+    chemical_set = set(c.lower() for c in chemical_db)
+    if query_lower in chemical_set:
+        logger.debug(f"Exact match found in chemical_db for {query}: {query}")
+        return query.capitalize()
     
+    common_set = set(c.lower() for c in common_db)
+    if query_lower in common_set:
+        logger.debug(f"Exact match found in common_db for {query}: {query}")
+        return query.capitalize()
+    
+    matches = process.extract(query, common_db, scorer=fuzz.WRatio, limit=top_n)
     filtered_matches = [match for match in matches if match[1] >= threshold]
-    logger.debug(f"Filtered matches: {filtered_matches}")
     
     if not filtered_matches:
-        logger.debug("No matches above threshold")
-        return "NF"
+        logger.debug("No matches in common_db, trying full chemical_db")
+        matches = process.extract(query, chemical_db, scorer=fuzz.WRatio, limit=top_n)
+        filtered_matches = [match for match in matches if match[1] >= threshold]
+        if not filtered_matches:
+            logger.debug("No matches above threshold")
+            return "NF"
     
-    def sorting_criteria(match):
-        name, score = match
-        secondary_score = fuzz.ratio(query, name)
-        return (-score, -secondary_score, -len(name))
-
-    sorted_matches = sorted(filtered_matches, key=sorting_criteria)
-    logger.debug(f"Sorted matches: {sorted_matches}")
-
+    sorted_matches = sorted(filtered_matches, key=lambda m: (-m[1], -len(m[0])))
     best_match = sorted_matches[0][0]
     logger.debug(f"Best match for {query}: {best_match}")
     return best_match
 
 def detect_separator(text: str) -> str | None:
-    """Détecte le séparateur principal parmi ',', ';', '.', '*'."""
     possible_separators = [',', ';', '.', '*']
     counts = Counter(char for char in text if char in possible_separators)
     logger.debug(f"Separator counts: {counts}")
@@ -88,7 +99,6 @@ def detect_separator(text: str) -> str | None:
     return max(counts, key=counts.get)
 
 def process_inci_list(raw_text: str) -> str:
-    """Traite la liste INCI extraite."""
     if not raw_text:
         logger.warning("No raw text provided")
         return ""
@@ -106,7 +116,6 @@ def process_inci_list(raw_text: str) -> str:
         for ingredient in ingredients
         if ingredient.strip() and len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
     ]
-    logger.debug(f"Cleaned ingredients: {cleaned_ingredients}")
     
     if not cleaned_ingredients:
         potential_ingredients = re.findall(r'\b[A-Z][a-zA-Z0-9\s-]*\b', cleaned_text)
@@ -115,18 +124,18 @@ def process_inci_list(raw_text: str) -> str:
             for ingredient in potential_ingredients
             if len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
         ]
-        logger.debug(f"Alternative ingredients: {cleaned_ingredients}")
     
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
-    logger.debug(f"Unique ingredients before fuzzy matching: {unique_ingredients}")
     
-    unique_ingredients = [
-        match if match != "NF" else ing
-        for ing in unique_ingredients
-        for match in [get_top_chemicals(ing, chemical_db)]
-    ]
-    logger.debug(f"Unique INCI list after fuzzy matching: {unique_ingredients}")
+    start_time = time.time()
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        unique_ingredients = list(executor.map(
+            lambda ing: get_top_chemicals(ing, tuple(chemical_db), tuple(common_chemical_db)),
+            unique_ingredients
+        ))
+    unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(cleaned_ingredients, unique_ingredients)]
+    logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
     
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
 
@@ -150,7 +159,6 @@ async def index(request: Request, image: UploadFile = File(None)):
         logger.error(error)
         return RedirectResponse(url=f"/?error={quote(error)}", status_code=303)
 
-    # Valider le type et la taille de l'image
     if image.size > MAX_FILE_SIZE:
         error = f"L'image dépasse la taille maximale de {MAX_FILE_SIZE // 1024 // 1024}MB"
         logger.error(error)
@@ -162,7 +170,6 @@ async def index(request: Request, image: UploadFile = File(None)):
         logger.error(error)
         return RedirectResponse(url=f"/?error={quote(error)}", status_code=303)
 
-    # Sauvegarder l'image avec un nom unique
     try:
         timestamp = str(int(time.time()))
         filename = f"{timestamp}_{re.sub(r'[^a-zA-Z0-9._-]', '_', image.filename)}"
@@ -175,7 +182,6 @@ async def index(request: Request, image: UploadFile = File(None)):
         logger.error(error)
         return RedirectResponse(url=f"/?error={quote(error)}", status_code=303)
 
-    # OCR avec pytesseract
     try:
         logger.info("Attempting to open image for OCR")
         img = Image.open(image_path).convert('L')
@@ -183,13 +189,13 @@ async def index(request: Request, image: UploadFile = File(None)):
         logger.info("Image opened and preprocessed successfully")
         raw_text = pytesseract.image_to_string(img, lang="eng+fra")
         logger.debug(f"Raw extracted text: {raw_text}")
+        start_time = time.time()
         extracted_text = process_inci_list(raw_text)
-        logger.info(f"Processed INCI list: {extracted_text}")
+        logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds: {extracted_text}")
     except Exception as e:
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
         logger.error(error)
 
-    # Rediriger vers GET / avec les résultats
     query_params = []
     if extracted_text:
         query_params.append(f"extracted_text={quote(extracted_text)}")
@@ -208,7 +214,7 @@ async def cleanup():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         if os.path.isfile(file_path):
             file_age = current_time - os.path.getmtime(file_path)
-            if file_age > 300:  # Supprimer les fichiers de plus de 5 minutes
+            if file_age > 300:
                 try:
                     os.remove(file_path)
                     logger.info(f"Deleted old file: {file_path}")
