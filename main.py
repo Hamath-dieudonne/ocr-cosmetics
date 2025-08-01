@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse
 from PIL import Image, ImageEnhance
+from typing import Union
 import pytesseract
 import shutil
 from urllib.parse import quote
@@ -36,14 +37,15 @@ common_db = []  # Sous-ensemble pour fuzzywuzzy
 async def startup_event():
     global chemical_db, common_db
     try:
-        # Charger la base de données INCI
+        load_dotenv()  # Charger .env
+        TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
+        pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
         INCI_Catalog = pd.read_pickle('static/T_INCI_Catalog_Version_YY_2025_JJ_13_MM_02_HH_15_MN_57.pkl')
         chemical_db = INCI_Catalog['INCI'].tolist()
-        common_db = chemical_db  # Utiliser tous les 11 626 ingrédients
+        common_db = chemical_db
         logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries, common_db with {len(common_db)}")
     except Exception as e:
-        logger.error(f"Error loading INCI catalog: {str(e)}")
-
+        logger.error(f"Error loading INCI catalog or environment: {str(e)}")
     # Configurer le chemin de Tesseract
     TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
@@ -106,7 +108,7 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
         return best_fuzzy_match
     return "NF"
 
-def detect_separator(text: str) -> str | None:
+def detect_separator(text: str) -> Union[str, None]:
     possible_separators = [',', ';', '.', '*']
     counts = Counter(char for char in text if char in possible_separators)
     logger.debug(f"Separator counts: {counts}")
