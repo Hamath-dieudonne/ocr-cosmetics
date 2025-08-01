@@ -47,11 +47,31 @@
             text-align: center;
         }
         .drop-text.hidden {
-            display: none; /* Masque le texte */
+            display: none !important;
         }
         .drop-zone {
             min-height: 120px;
             min-width: 280px;
+            position: relative;
+        }
+        .loader {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+        }
+        .loader::after {
+            content: '';
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #9642ea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         @media (max-width: 640px) {
             .layout-content-container {
@@ -65,6 +85,10 @@
             }
             .drop-text {
                 font-size: 0.8rem;
+            }
+            .loader::after {
+                width: 32px;
+                height: 32px;
             }
         }
         @media (max-width: 320px) {
@@ -83,6 +107,10 @@
             }
             .drop-text {
                 font-size: 0.7rem;
+            }
+            .loader::after {
+                width: 24px;
+                height: 24px;
             }
         }
     </style>
@@ -137,6 +165,7 @@
                             id="dropZone"
                             class="drop-zone flex flex-col items-center gap-4 rounded-xl border-2 border-dashed border-[#e0dce5] px-6 py-8 sm:px-8 sm:py-10"
                         >
+                            <div id="loader" class="loader hidden"></div>
                             <p id="dropText" class="drop-text text-center">
                                 Drag and drop an image here
                             </p>
@@ -170,6 +199,7 @@
                                 <span class="truncate">Take a Photo</span>
                             </button>
                             <button
+                                id="extractButton"
                                 type="submit"
                                 class="flex min-w-[84px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em] grow"
                             >
@@ -218,10 +248,19 @@
         const form = document.getElementById('uploadForm');
         const feedbackMessage = document.getElementById('feedbackMessage');
         const dropText = document.getElementById('dropText');
+        const loader = document.getElementById('loader');
+        const extractButton = document.getElementById('extractButton');
 
-        // Vérifier si dropText existe
+        // Vérifier si les éléments existent
         if (!dropText) {
             console.error('Erreur : #dropText non trouvé dans le DOM');
+        } else {
+            console.log('dropText trouvé dans le DOM');
+        }
+        if (!loader) {
+            console.error('Erreur : #loader non trouvé dans le DOM');
+        } else {
+            console.log('loader trouvé dans le DOM');
         }
 
         function showFeedback(message, isError = false) {
@@ -232,6 +271,47 @@
                 feedbackMessage.classList.add('hidden');
             }, 3000);
         }
+
+        function showLoader() {
+            if (loader && dropText && previewContainer) {
+                loader.classList.remove('hidden');
+                dropText.classList.add('hidden');
+                // Ne masquer previewContainer que si aucune image n'est chargée
+                if (!imagePreview.src || imagePreview.src === '#' || imagePreview.src.endsWith('#')) {
+                    previewContainer.classList.add('hidden');
+                    console.log('Loader affiché, dropText et previewContainer masqués (pas d\'image)');
+                } else {
+                    console.log('Loader affiché, dropText masqué, previewContainer reste visible');
+                }
+            }
+        }
+
+        function hideLoader() {
+            if (loader) {
+                loader.classList.add('hidden');
+                if (!imagePreview.src || imagePreview.src === '#' || imagePreview.src.endsWith('#')) {
+                    dropText.classList.remove('hidden');
+                    previewContainer.classList.add('hidden');
+                    console.log('Loader masqué, dropText affiché, pas d\'image');
+                } else {
+                    dropText.classList.add('hidden');
+                    previewContainer.classList.remove('hidden');
+                    console.log('Loader masqué, dropText masqué, previewContainer affiché');
+                }
+            }
+        }
+
+        // Vérifier is_loading au chargement de la page
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isLoading = urlParams.get('is_loading') === 'true';
+            if (isLoading) {
+                showLoader();
+            } else {
+                hideLoader();
+            }
+            console.log('is_loading:', isLoading);
+        });
 
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -249,6 +329,7 @@
             dropZone.classList.remove('drag-over');
             const files = e.dataTransfer.files;
             if (files.length > 0 && files[0].type.startsWith('image/')) {
+                showLoader();
                 fileInput.files = files;
                 previewImage(files[0]);
             }
@@ -257,6 +338,7 @@
 
         fileInput.addEventListener('change', () => {
             if (fileInput.files.length > 0) {
+                showLoader();
                 previewImage(fileInput.files[0]);
             }
             console.log('File input changed:', fileInput.files.length > 0 ? fileInput.files[0].name : 'No file');
@@ -267,17 +349,12 @@
             const reader = new FileReader();
             reader.onload = (e) => {
                 imagePreview.src = e.target.result;
-                previewContainer.classList.remove('hidden');
-                if (dropText) {
-                    dropText.classList.add('hidden');
-                    console.log('Classe hidden ajoutée à dropText');
-                } else {
-                    console.error('dropText est null');
-                }
+                hideLoader();
                 console.log('Image preview updated:', file.name);
             };
             reader.onerror = (e) => {
                 console.error('Erreur lors de la lecture du fichier :', e);
+                hideLoader();
                 showFeedback('Erreur lors du chargement de l\'image', true);
             };
             reader.readAsDataURL(file);
@@ -302,6 +379,7 @@
 
         takePhotoButton.addEventListener('click', async () => {
             try {
+                showLoader();
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                 const video = document.createElement('video');
                 video.srcObject = stream;
@@ -327,6 +405,7 @@
                 });
             } catch (err) {
                 console.error('Error accessing camera:', err);
+                hideLoader();
                 showFeedback('Impossible d\'accéder à la caméra. Veuillez vérifier les permissions.', true);
             }
         });
@@ -357,12 +436,7 @@
             fileInput.value = '';
             previewContainer.classList.add('hidden');
             imagePreview.src = '#';
-            if (dropText) {
-                dropText.classList.remove('hidden');
-                console.log('Classe hidden retirée de dropText');
-            } else {
-                console.error('dropText est null');
-            }
+            hideLoader();
             const existingResults = document.getElementById('resultsContainer');
             const existingError = document.getElementById('errorMessage');
             const noResults = document.getElementById('noResultsMessage');
@@ -378,6 +452,19 @@
                 noResults.remove();
                 console.log('No results message removed on clear');
             }
+        });
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (fileInput.files.length === 0) {
+                showFeedback('Veuillez sélectionner une image', true);
+                return;
+            }
+            showLoader();
+            extractButton.disabled = true;
+            extractButton.classList.add('opacity-50', 'cursor-not-allowed');
+            console.log('Formulaire soumis, loader affiché');
+            form.submit();
         });
     </script>
 </body>

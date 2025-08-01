@@ -14,9 +14,6 @@ import pytesseract
 import shutil
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
-from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
 from fuzzywuzzy import fuzz
 
 # Configurer le logging
@@ -32,41 +29,20 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Initialisation globale des dépendances
-model = None
-index = None
 chemical_db = []
+common_db = []  # Sous-ensemble pour fuzzywuzzy
 
 @app.on_event("startup")
 async def startup_event():
-    global model, index, chemical_db
+    global chemical_db, common_db
     try:
         # Charger la base de données INCI
         INCI_Catalog = pd.read_pickle('static/T_INCI_Catalog_Version_YY_2025_JJ_13_MM_02_HH_15_MN_57.pkl')
         chemical_db = INCI_Catalog['INCI'].tolist()
-        logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
+        common_db = chemical_db  # Utiliser tous les 11 626 ingrédients
+        logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries, common_db with {len(common_db)}")
     except Exception as e:
         logger.error(f"Error loading INCI catalog: {str(e)}")
-
-    try:
-        # Initialiser SentenceTransformer et Faiss
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        dimension = model.get_sentence_embedding_dimension()
-        index_path = 'static/chemical_db_index.faiss'
-        if os.path.exists(index_path):
-            index = faiss.read_index(index_path)
-            logger.info(f"Faiss index chargé depuis {index_path}")
-        else:
-            chemical_db_vectors = model.encode(chemical_db, batch_size=32, show_progress_bar=True)
-            index = faiss.IndexFlatL2(dimension)
-            index.add(chemical_db_vectors)
-            faiss.write_index(index, index_path)
-            logger.info(f"Faiss index créé et sauvegardé dans {index_path}")
-        logger.info(f"Type of index at startup: {type(index)}")
-        logger.info("Faiss index initialized with chemical_db vectors")
-    except Exception as e:
-        logger.error(f"Error initializing SentenceTransformer or Faiss: {str(e)}")
-        index = None
-        model = None
 
     # Configurer le chemin de Tesseract
     TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
@@ -78,12 +54,7 @@ def validate_image_path(image_path: str) -> bool:
     return abs_image_path.startswith(abs_upload_folder) and os.path.exists(image_path)
 
 @lru_cache(maxsize=1000)
-def get_top_chemicals(query: str, index, top_n: int = 1, threshold: float = 0.8) -> str:
-    if not model or not index:
-        logger.error("Model or Faiss index not initialized")
-        return "NF"
-    
-    logger.info(f"Type of index in get_top_chemicals: {type(index)}")
+def get_top_chemicals(query: str, threshold: int = 85) -> str:
     query_lower = query.lower().strip()
     logger.debug(f"Processing query: {query_lower}")
     
@@ -92,32 +63,46 @@ def get_top_chemicals(query: str, index, top_n: int = 1, threshold: float = 0.8)
     if query_lower in chemical_set:
         logger.debug(f"Exact match found in chemical_db for {query}: {query}")
         return query.capitalize()
-    print("query_lower", query_lower)
-    # Recherche vectorielle avec Faiss
-    try:
-        query_vector = model.encode([query])[0]
-        distances, indices = index.search(np.array([query_vector]).astype(np.float32), top_n + 5)  # Plus de candidats pour plus de choix
-        best_matches = [(chemical_db[i], 1 / (1 + d)) for i, d in zip(indices[0], distances[0]) if 0 <= i < len(chemical_db)]
-        best_matches = sorted(best_matches, key=lambda x: x[1], reverse=True)
-        
-        for match, score in best_matches:
-            if score >= threshold:
-                logger.debug(f"Best Faiss match for {query}: {match} (similarity: {score})")
-                return match
-        logger.debug(f"No Faiss match above threshold {threshold} for {query}")
-    except Exception as e:
-        logger.error(f"Error in Faiss search for query {query}: {str(e)}")
     
-    # Fallback avec fuzzywuzzy si Faiss échoue ou ne trouve pas
-    best_fuzzy_score = 0
-    best_fuzzy_match = "NF"
-    for chem in chemical_db:
+    print("query_lower", query_lower)
+    
+    # Nettoyer la query pour calculer sa longueur (alphanumériques uniquement)
+    query_cleaned = re.sub(r'[^a-zA-Z0-9]', '', query_lower)
+    query_length = len(query_cleaned)
+    logger.debug(f"Cleaned query length: {query_length} ('{query_cleaned}')")
+    
+    # Calculer les correspondances avec fuzzywuzzy sur common_db
+    matches = []
+    for chem in common_db:
         score = fuzz.WRatio(query_lower, chem.lower())
-        if score > best_fuzzy_score and score >= 85:  # Seuil fuzzywuzzy
-            best_fuzzy_score = score
-            best_fuzzy_match = chem
+        matches.append((chem, score))
+    
+    # Trier par score décroissant et prendre les 3 meilleures
+    matches.sort(key=lambda x: x[1], reverse=True)
+    top_3_matches = matches[:3]
+    
+    # Logger les 3 meilleures alternatives
+    logger.info(f"Top 3 matches for {query_lower}:")
+    for chem, score in top_3_matches:
+        logger.info(f"  - {chem} (score: {score})")
+    
+    # Sélectionner la meilleure correspondance, avec longueur la plus proche de la query en cas d'égalité
+    best_fuzzy_match = "NF"
+    best_fuzzy_score = 0
+    best_fuzzy_diff = float('inf')  # Différence minimale initiale
+    for chem, score in top_3_matches:
+        if score >= threshold:
+            if score > best_fuzzy_score:
+                best_fuzzy_score = score
+                best_fuzzy_match = chem
+                best_fuzzy_diff = abs(len(chem) - query_length)
+            elif score == best_fuzzy_score:
+                current_diff = abs(len(chem) - query_length)
+                if current_diff < best_fuzzy_diff:
+                    best_fuzzy_match = chem
+                    best_fuzzy_diff = current_diff
     if best_fuzzy_match != "NF":
-        logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
+        logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score}, diff: {best_fuzzy_diff})")
         return best_fuzzy_match
     return "NF"
 
@@ -130,7 +115,7 @@ def detect_separator(text: str) -> str | None:
         return None
     return max(counts, key=counts.get)
 
-def process_inci_list(raw_text: str, index) -> str:
+def process_inci_list(raw_text: str) -> str:
     if not raw_text:
         logger.warning("No raw text provided")
         return ""
@@ -163,7 +148,7 @@ def process_inci_list(raw_text: str, index) -> str:
     start_time = time.time()
     with ThreadPoolExecutor(max_workers=4) as executor:
         results = list(executor.map(
-            lambda ing: get_top_chemicals(ing, index),
+            lambda ing: get_top_chemicals(ing),
             unique_ingredients
         ))
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
@@ -230,7 +215,7 @@ async def index(request: Request, image: UploadFile = File(None)):
         raw_text = pytesseract.image_to_string(img, lang="eng+fra")
         logger.debug(f"Raw extracted text: {raw_text}")
         start_time = time.time()
-        extracted_text = process_inci_list(raw_text, index)
+        extracted_text = process_inci_list(raw_text)
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
     except Exception as e:
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
