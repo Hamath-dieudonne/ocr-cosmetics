@@ -15,6 +15,9 @@ import shutil
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 from fuzzywuzzy import fuzz
+from dotenv import load_dotenv
+from pathlib import Path
+from os import getenv
 
 # Configurer le logging
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +39,11 @@ common_db = []  # Sous-ensemble pour fuzzywuzzy
 async def startup_event():
     global chemical_db, common_db
     try:
-        load_dotenv()  # Charger .env
+        # Chemin vers le fichier .env
+        env_path = Path('.') / '.env'
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path)
+        # Assurez-vous que le fichier .env est chargé avant d'importer les variables d'environnement
         TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
         INCI_Catalog = pd.read_pickle('static/T_INCI_Catalog_Version_YY_2025_JJ_13_MM_02_HH_15_MN_57.pkl')
@@ -45,9 +52,6 @@ async def startup_event():
         logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries, common_db with {len(common_db)}")
     except Exception as e:
         logger.error(f"Error loading INCI catalog or environment: {str(e)}")
-    # Configurer le chemin de Tesseract
-    TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
-    pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
 def validate_image_path(image_path: str) -> bool:
     abs_image_path = os.path.abspath(image_path)
