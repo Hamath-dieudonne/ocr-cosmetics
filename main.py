@@ -10,7 +10,6 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse
 from PIL import Image, ImageEnhance
-from typing import Union
 import pytesseract
 import shutil
 from urllib.parse import quote
@@ -108,7 +107,7 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
         return best_fuzzy_match
     return "NF"
 
-def detect_separator(text: str) -> Union[str, None]:
+def detect_separator(text: str) -> str | None:
     possible_separators = [',', ';', '.', '*']
     counts = Counter(char for char in text if char in possible_separators)
     logger.debug(f"Separator counts: {counts}")
