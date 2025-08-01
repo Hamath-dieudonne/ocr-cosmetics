@@ -6,8 +6,11 @@ __pycache__/
 *.pyd
 
 # Fichiers temporaires
-static/uploads/*
+static/*
 *.log
 
 # Fichiers sensibles
 *.pkl
+env_ocr/
+ocr_env/
+.env
