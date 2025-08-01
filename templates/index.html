@@ -46,6 +46,9 @@
             font-size: 0.9rem;
             text-align: center;
         }
+        .drop-text.hidden {
+            display: none; /* Masque le texte */
+        }
         .drop-zone {
             min-height: 120px;
             min-width: 280px;
@@ -134,7 +137,7 @@
                             id="dropZone"
                             class="drop-zone flex flex-col items-center gap-4 rounded-xl border-2 border-dashed border-[#e0dce5] px-6 py-8 sm:px-8 sm:py-10"
                         >
-                            <p class="drop-text text-center">
+                            <p id="dropText" class="drop-text text-center">
                                 Drag and drop an image here
                             </p>
                             <input
@@ -183,29 +186,18 @@
                         </div>
                         <p id="feedbackMessage" class="feedback-message hidden text-center text-sm font-normal leading-normal pb-3 pt-1 px-4 text-[#756388]"></p>
                         {% if extracted_text %}
-                        <div
-                            id="resultsContainer"
-                            class="flex flex-col gap-3 p-4"
-                        >
-                            <div
-                                class="inci-text text-[#141118] text-sm sm:text-base font-normal leading-normal pb-3 pt-1 px-4"
-                            >
+                        <div id="resultsContainer" class="flex flex-col gap-3 p-4">
+                            <div class="inci-text text-[#141118] text-sm sm:text-base font-normal leading-normal pb-3 pt-1 px-4">
                                 {{ extracted_text }}
                             </div>
                         </div>
-                        {% elif not error %}
-                        <p
-                            id="noResultsMessage"
-                            class="text-[#756388] text-sm font-normal leading-normal pb-3 pt-1 px-4"
-                        >
+                        {% elif has_submitted and not error %}
+                        <p id="noResultsMessage" class="text-[#756388] text-sm font-normal leading-normal pb-3 pt-1 px-4">
                             Aucun ingrédient détecté
                         </p>
                         {% endif %}
                         {% if error %}
-                        <p
-                            id="errorMessage"
-                            class="text-[#756388] text-sm font-normal leading-normal pb-3 pt-1 px-4"
-                        >
+                        <p id="errorMessage" class="text-[#756388] text-sm font-normal leading-normal pb-3 pt-1 px-4">
                             {{ error }}
                         </p>
                         {% endif %}
@@ -225,6 +217,12 @@
         const clearImageButton = document.getElementById('clearImageButton');
         const form = document.getElementById('uploadForm');
         const feedbackMessage = document.getElementById('feedbackMessage');
+        const dropText = document.getElementById('dropText');
+
+        // Vérifier si dropText existe
+        if (!dropText) {
+            console.error('Erreur : #dropText non trouvé dans le DOM');
+        }
 
         function showFeedback(message, isError = false) {
             feedbackMessage.textContent = message;
@@ -265,11 +263,22 @@
         });
 
         function previewImage(file) {
+            console.log('Appel de previewImage pour le fichier :', file.name);
             const reader = new FileReader();
             reader.onload = (e) => {
                 imagePreview.src = e.target.result;
                 previewContainer.classList.remove('hidden');
+                if (dropText) {
+                    dropText.classList.add('hidden');
+                    console.log('Classe hidden ajoutée à dropText');
+                } else {
+                    console.error('dropText est null');
+                }
                 console.log('Image preview updated:', file.name);
+            };
+            reader.onerror = (e) => {
+                console.error('Erreur lors de la lecture du fichier :', e);
+                showFeedback('Erreur lors du chargement de l\'image', true);
             };
             reader.readAsDataURL(file);
         }
@@ -348,6 +357,12 @@
             fileInput.value = '';
             previewContainer.classList.add('hidden');
             imagePreview.src = '#';
+            if (dropText) {
+                dropText.classList.remove('hidden');
+                console.log('Classe hidden retirée de dropText');
+            } else {
+                console.error('dropText est null');
+            }
             const existingResults = document.getElementById('resultsContainer');
             const existingError = document.getElementById('errorMessage');
             const noResults = document.getElementById('noResultsMessage');
