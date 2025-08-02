@@ -14,3 +14,4 @@ static/*
 env_ocr/
 ocr_env/
 .env
+fernet_key.txt
