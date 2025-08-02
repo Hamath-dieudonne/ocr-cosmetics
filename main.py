@@ -5,7 +5,7 @@ import pandas as pd
 from functools import lru_cache
 import time
 import logging
-from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Depends
+from fastapi import FastAPI, File, UploadFile, Request, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -20,7 +20,6 @@ from fuzzywuzzy import fuzz
 from dotenv import load_dotenv
 from pathlib import Path
 from os import getenv
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from cryptography.fernet import Fernet
 
 # Configurer le logging
@@ -36,15 +35,6 @@ templates = Jinja2Templates(directory="templates")
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
-
-# Authentification de base
-security = HTTPBasic()
-def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = "colleague"
-    correct_password = "securepassword"
-    if credentials.username != correct_username or credentials.password != correct_password:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return credentials.username
 
 # Clé de chiffrement pour .pkl et images
 FERNET_KEY = os.getenv("FERNET_KEY")
@@ -186,7 +176,7 @@ def process_inci_list(raw_text: str) -> str:
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
 
 @app.get("/")
-async def index(request: Request, extracted_text: str | None = None, image_path: str | None = None, error: str | None = None, has_submitted: bool = False, is_loading: bool = False, username: str = Depends(get_current_username)):
+async def index(request: Request, extracted_text: str | None = None, image_path: str | None = None, error: str | None = None, has_submitted: bool = False, is_loading: bool = False):
     logger.info("GET request received for /")
     return templates.TemplateResponse(
         "index.html",
@@ -201,7 +191,7 @@ async def index(request: Request, extracted_text: str | None = None, image_path:
     )
 
 @app.post("/")
-async def index(request: Request, image: UploadFile = File(None), username: str = Depends(get_current_username)):
+async def index(request: Request, image: UploadFile = File(None)):
     logger.info("POST request received")
     extracted_text = None
     image_path = None
@@ -268,7 +258,7 @@ async def index(request: Request, image: UploadFile = File(None), username: str 
     return RedirectResponse(url=redirect_url, status_code=303)
 
 @app.get("/cleanup")
-async def cleanup(username: str = Depends(get_current_username)):
+async def cleanup():
     logger.info("Cleaning up old images")
     current_time = time.time()
     for filename in os.listdir(UPLOAD_FOLDER):
@@ -284,7 +274,7 @@ async def cleanup(username: str = Depends(get_current_username)):
     return {"message": "Cleanup completed"}
 
 @app.post("/delete_image")
-async def delete_image(request: Request, username: str = Depends(get_current_username)):
+async def delete_image(request: Request):
     try:
         body = await request.json()
         image_path = body.get("image_path")
