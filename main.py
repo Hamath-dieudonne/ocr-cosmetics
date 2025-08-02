@@ -8,9 +8,8 @@ import logging
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from PIL import Image, ImageEnhance
 import pytesseract
 import shutil
@@ -23,46 +22,31 @@ from os import getenv
 from cryptography.fernet import Fernet
 
 # Configurer le logging
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-app.add_middleware(HTTPSRedirectMiddleware)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["your-app.onrender.com"])
-app.mount("/static", StaticFiles(directory="static", exclude=["inci_only.pkl.enc"]), name="static")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "0.0.0.0", "your-app.onrender.com"])
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+@app.get("/static/{file_path:path}")
+async def serve_static(file_path: str):
+    file_path = os.path.normpath(file_path)
+    full_path = os.path.join("static", file_path)
+    if not os.path.exists(full_path):
+        return JSONResponse(content={"error": "File not found"}, status_code=404)
+    if "inci_only.pkl.enc" in full_path or not full_path.startswith(os.path.abspath("static/uploads")):
+        return JSONResponse(content={"error": "Access denied"}, status_code=404)
+    return FileResponse(full_path)
 
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
-# Clé de chiffrement pour .pkl et images
-FERNET_KEY = os.getenv("FERNET_KEY")
-if not FERNET_KEY:
-    raise ValueError("FERNET_KEY must be set in environment variables")
-cipher = Fernet(FERNET_KEY.encode())
-
-def encrypt_file(file_path):
-    logger.info(f"Encrypting file: {file_path}")
-    with open(file_path, "rb") as f:
-        data = f.read()
-    encrypted_data = cipher.encrypt(data)
-    encrypted_path = file_path + ".enc"
-    with open(encrypted_path, "wb") as f:
-        f.write(encrypted_data)
-    os.remove(file_path)  # Supprime l'original
-    return encrypted_path
-
-def decrypt_file(encrypted_path):
-    logger.info(f"Decrypting file: {encrypted_path}")
-    with open(encrypted_path, "rb") as f:
-        encrypted_data = f.read()
-    decrypted_data = cipher.decrypt(encrypted_data)
-    original_path = encrypted_path.replace(".enc", "")
-    with open(original_path, "wb") as f:
-        f.write(decrypted_data)
-    os.remove(encrypted_path)  # Supprime le fichier chiffré après usage
-    return original_path
+chemical_db = []
+common_db = []
 
 @app.on_event("startup")
 async def startup_event():
@@ -73,19 +57,18 @@ async def startup_event():
             load_dotenv(dotenv_path=env_path)
         TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
-        # Déchiffrer et charger le fichier .pkl
         encrypted_path = 'static/inci_only.pkl.enc'
         if os.path.exists(encrypted_path):
             with open(encrypted_path, "rb") as f:
                 encrypted_data = f.read()
-            decrypted_data = cipher.decrypt(encrypted_data)
+            decrypted_data = Fernet(os.getenv("FERNET_KEY").encode()).decrypt(encrypted_data)
             with open("temp.pkl", "wb") as f:
                 f.write(decrypted_data)
             INCI_Catalog = pd.read_pickle("temp.pkl")
             os.remove("temp.pkl")
             chemical_db = INCI_Catalog['INCI'].tolist()
             common_db = chemical_db
-            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries, common_db with {len(common_db)}")
+            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
     except Exception as e:
@@ -102,10 +85,9 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
     logger.debug(f"Processing query: {query_lower}")
     chemical_set = set(c.lower() for c in chemical_db)
     if query_lower in chemical_set:
-        logger.debug(f"Exact match found in chemical_db for {query}: {query}")
+        logger.debug(f"Exact match found for {query}")
         return query.capitalize()
-    print("query_lower", query_lower)
-    query_cleaned = re.sub(r'[^a-zA-Z0-9]', '', query_lower)
+    query_cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', query_lower)
     query_length = len(query_cleaned)
     logger.debug(f"Cleaned query length: {query_length} ('{query_cleaned}')")
     matches = [(chem, fuzz.WRatio(query_lower, chem.lower())) for chem in common_db]
@@ -129,12 +111,13 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
                     best_fuzzy_match = chem
                     best_fuzzy_diff = current_diff
     if best_fuzzy_match != "NF":
-        logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score}, diff: {best_fuzzy_diff})")
+        logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
         return best_fuzzy_match
-    return "NF"
+    logger.warning(f"No match found for {query_lower} with threshold {threshold}")
+    return query.capitalize()
 
 def detect_separator(text: str) -> str | None:
-    possible_separators = [',', ';', '.', '*']
+    possible_separators = [',', ';', '.', '*', '\n', '-']
     counts = Counter(char for char in text if char in possible_separators)
     logger.debug(f"Separator counts: {counts}")
     if not counts:
@@ -146,11 +129,12 @@ def process_inci_list(raw_text: str) -> str:
     if not raw_text:
         logger.warning("No raw text provided")
         return ""
+    logger.debug(f"Raw text received: {raw_text}")  # Ajout pour débogage
     cleaned_text = re.sub(r'[\n\r\s]+', ' ', raw_text.strip())
     logger.debug(f"Cleaned text: {cleaned_text}")
     separator = detect_separator(cleaned_text)
     logger.debug(f"Detected separator: {separator}")
-    ingredients = cleaned_text.split(separator) if separator else []
+    ingredients = cleaned_text.split(separator) if separator else [cleaned_text]
     cleaned_ingredients = [
         re.sub(r'[^a-zA-Z0-9\s-]', '', ingredient).strip().capitalize()
         for ingredient in ingredients
@@ -163,6 +147,9 @@ def process_inci_list(raw_text: str) -> str:
             for ingredient in potential_ingredients
             if len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
         ]
+    if not cleaned_ingredients:
+        logger.warning("No valid ingredients detected after processing")
+        return "Aucun ingrédient détecté"
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
@@ -172,23 +159,21 @@ def process_inci_list(raw_text: str) -> str:
             unique_ingredients
         ))
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
-    logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
+    logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
 
 @app.get("/")
 async def index(request: Request, extracted_text: str | None = None, image_path: str | None = None, error: str | None = None, has_submitted: bool = False, is_loading: bool = False):
     logger.info("GET request received for /")
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "extracted_text": extracted_text,
-            "image_path": image_path,
-            "error": error,
-            "has_submitted": has_submitted,
-            "is_loading": is_loading
-        }
-    )
+    context = {
+        "request": request,
+        "extracted_text": extracted_text if extracted_text is not None else "",
+        "image_path": image_path if image_path is not None else "",
+        "error": error if error is not None else "",
+        "has_submitted": has_submitted,
+        "is_loading": is_loading
+    }
+    return templates.TemplateResponse("index.html", context)
 
 @app.post("/")
 async def index(request: Request, image: UploadFile = File(None)):
@@ -221,9 +206,6 @@ async def index(request: Request, image: UploadFile = File(None)):
         with open(image_path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
         logger.info(f"Image saved at: {image_path}")
-        # Chiffrer l'image après upload
-        encrypted_path = encrypt_file(image_path)
-        image_path = encrypted_path  # Mettre à jour le chemin pour le traitement
     except Exception as e:
         error = f"Erreur lors de la sauvegarde de l'image : {str(e)}"
         logger.error(error)
@@ -231,9 +213,7 @@ async def index(request: Request, image: UploadFile = File(None)):
 
     try:
         logger.info("Attempting to open image for OCR")
-        # Déchiffrer l'image pour traitement
-        decrypted_path = decrypt_file(image_path)
-        img = Image.open(decrypted_path).convert('L')
+        img = Image.open(image_path).convert('L')
         img = ImageEnhance.Contrast(img).enhance(2.0)
         logger.info("Image opened and preprocessed successfully")
         raw_text = pytesseract.image_to_string(img, lang="eng+fra")
@@ -241,7 +221,6 @@ async def index(request: Request, image: UploadFile = File(None)):
         start_time = time.time()
         extracted_text = process_inci_list(raw_text)
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
-        os.remove(decrypted_path)  # Nettoyer le fichier déchiffré
     except Exception as e:
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
         logger.error(error)
@@ -254,6 +233,7 @@ async def index(request: Request, image: UploadFile = File(None)):
     if error:
         query_params.append(f"error={quote(error)}")
     query_params.append(f"has_submitted=true")
+    query_params.append(f"is_loading=false")
     redirect_url = "/?" + "&".join(query_params) if query_params else "/"
     return RedirectResponse(url=redirect_url, status_code=303)
 
@@ -263,12 +243,12 @@ async def cleanup():
     current_time = time.time()
     for filename in os.listdir(UPLOAD_FOLDER):
         file_path = os.path.join(UPLOAD_FOLDER, filename)
-        if os.path.isfile(file_path) and file_path.endswith(".enc"):
+        if os.path.isfile(file_path):
             file_age = current_time - os.path.getmtime(file_path)
-            if file_age > 300:
+            if file_age > 3600:  # 1 heure
                 try:
                     os.remove(file_path)
-                    logger.info(f"Deleted old encrypted file: {file_path}")
+                    logger.info(f"Deleted old file: {file_path}")
                 except Exception as e:
                     logger.error(f"Error deleting old file {file_path}: {str(e)}")
     return {"message": "Cleanup completed"}
