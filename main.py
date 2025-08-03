@@ -5,7 +5,7 @@ import pandas as pd
 from functools import lru_cache
 import time
 import logging
-from fastapi import FastAPI, File, UploadFile, Request, HTTPException
+from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
@@ -18,16 +18,14 @@ from concurrent.futures import ThreadPoolExecutor
 from fuzzywuzzy import fuzz
 from dotenv import load_dotenv
 from pathlib import Path
-from os import getenv
 from cryptography.fernet import Fernet
 
 # Configurer le logging
-# logging.basicConfig(level=logging.INFO)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "0.0.0.0", "your-app.onrender.com"])
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "0.0.0.0", "ocr-cosmetics.onrender.com"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -129,7 +127,7 @@ def process_inci_list(raw_text: str) -> str:
     if not raw_text:
         logger.warning("No raw text provided")
         return ""
-    logger.debug(f"Raw text received: {raw_text}")  # Ajout pour débogage
+    logger.debug(f"Raw text received: {raw_text}")
     cleaned_text = re.sub(r'[\n\r\s]+', ' ', raw_text.strip())
     logger.debug(f"Cleaned text: {cleaned_text}")
     separator = detect_separator(cleaned_text)
@@ -161,6 +159,11 @@ def process_inci_list(raw_text: str) -> str:
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
+
+@app.head("/")
+async def head_root():
+    logger.info("HEAD request received for /")
+    return Response(status_code=200)
 
 @app.get("/")
 async def index(request: Request, extracted_text: str | None = None, image_path: str | None = None, error: str | None = None, has_submitted: bool = False, is_loading: bool = False):
