@@ -6,7 +6,7 @@ __pycache__/
 *.pyd
 
 # Fichiers temporaires
-static/*
+
 *.log
 
 # Fichiers sensibles
