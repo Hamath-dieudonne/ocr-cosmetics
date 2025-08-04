@@ -304,9 +304,9 @@ async def delete_image(request: Request):
 
 # Performing OCR with OpenRouter Qwen2.5-VL-72B-Instruct
 async def ocr_with_openrouter(image_path):
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    api_key = os.getenv("QWEN_API_KEY")
     if not api_key:
-        raise Exception("OPENROUTER_API_KEY not found in environment")
+        raise Exception("QWEN_API_KEY not found in environment")
 
     with open(image_path, "rb") as image_file:
         image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
