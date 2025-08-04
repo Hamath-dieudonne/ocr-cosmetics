@@ -65,9 +65,8 @@ async def startup_event():
             decrypted_data = Fernet(os.getenv("FERNET_KEY").encode()).decrypt(encrypted_data)
             INCI_Catalog = pd.read_pickle(io.BytesIO(decrypted_data))
             chemical_db = INCI_Catalog['INCI'].tolist()
-            # Construire le Trie pour les recherches floues
-            for i, chem in enumerate(chemical_db):
-                common_db_trie[chem.lower()] = i
+            for chem in chemical_db:
+                common_db_trie[chem.lower()] = chem  # Stocker la chaîne originale
             logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries and built Trie")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
@@ -85,13 +84,13 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
     logger.info(f"Processing query: {query_lower}")
     if query_lower in common_db_trie:
         logger.info(f"Exact match found for {query}")
-        return query.capitalize()
+        return common_db_trie[query_lower]  # Retourner la chaîne originale
     query_cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', query_lower)
     query_length = len(query_cleaned)
-    candidates = common_db_trie.keys(prefix=query_cleaned[:3])  # Préfiltrer avec les 3 premiers caractères
-    matches = [(chem, fuzz.WRatio(query_lower, chem)) for chem in candidates]
-    if not matches:
-        matches = [(chem, fuzz.WRatio(query_lower, chem)) for chem in common_db_trie.keys()]
+    candidates = list(common_db_trie.keys(prefix=query_cleaned[:3]))  # Préfiltrer
+    if not candidates:
+        candidates = list(common_db_trie.keys())
+    matches = [(common_db_trie[chem], fuzz.WRatio(query_lower, chem)) for chem in candidates]
     matches.sort(key=lambda x: x[1], reverse=True)
     top_3_matches = matches[:3]
     logger.info(f"Top 3 matches for {query_lower}:")
@@ -121,7 +120,7 @@ def detect_separator(text: str) -> str | None:
     possible_separators = [' ,', ' ;', ' *', ' +']
     counts = Counter(text.count(sep) for sep in possible_separators)
     logger.info(f"Separator counts: {counts}")
-    if not counts:
+    if not counts or max(counts.values()) == 0:
         logger.info("No separator found")
         return None
     return max(possible_separators, key=lambda sep: text.count(sep))
@@ -157,13 +156,11 @@ def process_inci_list(raw_text: str) -> str:
     with ThreadPoolExecutor(max_workers=min(4, len(unique_ingredients))) as executor:
         profiler = cProfile.Profile()
         profiler.enable()
-        results = list(executor.map(
-            lambda ing: get_top_chemicals(ing),
-            unique_ingredients
-        ))
+        results = list(executor.map(get_top_chemicals, unique_ingredients))
         profiler.disable()
         profiler.print_stats()
-    unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
+    # Correction de l'erreur 'tuple' en s'assurant que results contient des chaînes
+    unique_ingredients = [match if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
 
@@ -192,6 +189,7 @@ async def index(request: Request, image: UploadFile = File(None)):
     image_path = None
     error = None
     has_submitted = True
+    total_start_time = time.time()
 
     if image is None or not image.filename:
         error = "Aucune image reçue ou nom de fichier vide"
@@ -224,15 +222,14 @@ async def index(request: Request, image: UploadFile = File(None)):
     try:
         logger.info("Attempting to open image for OCR")
         img = Image.open(image_path).convert('L')
-        # Amélioration de la qualité de l'image si nécessaire
-        if img.size[0] < 200 or img.size[1] < 200:  # Vérifier la résolution minimale
+        if img.size[0] < 200 or img.size[1] < 200:
             img = img.resize((300, 300), Image.Resampling.LANCZOS)
         enhancer = ImageEnhance.Contrast(img)
         img = enhancer.enhance(2.0)
-        img = img.filter(ImageFilter.SHARPEN)  # Ajouter un filtrage pour améliorer les bords
-        logger.info("Image opened and preprocessed successfully")
+        img = img.filter(ImageFilter.SHARPEN)
+        ocr_start_time = time.time()
         raw_text = pytesseract.image_to_string(img, lang="eng+fra", config='--psm 6')
-        logger.info(f"Raw extracted text: {raw_text}")
+        logger.info(f"OCR completed in {time.time() - ocr_start_time:.2f} seconds. Raw extracted text: {raw_text}")
         start_time = time.time()
         extracted_text = process_inci_list(raw_text)
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
@@ -240,6 +237,7 @@ async def index(request: Request, image: UploadFile = File(None)):
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
         logger.error(error)
 
+    logger.info(f"Total processing time: {time.time() - total_start_time:.2f} seconds")
     query_params = []
     if extracted_text:
         query_params.append(f"extracted_text={quote(extracted_text)}")
