@@ -5,23 +5,26 @@ import pandas as pd
 from functools import lru_cache
 import time
 import logging
+import cProfile
+import io
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageFilter
 import pytesseract
 import shutil
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
-from fuzzywuzzy import fuzz
+from rapidfuzz import fuzz
+from pytrie import Trie
 from dotenv import load_dotenv
 from pathlib import Path
 from cryptography.fernet import Fernet
 
 # Configurer le logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -44,11 +47,11 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 chemical_db = []
-common_db = []
+common_db_trie = Trie()
 
 @app.on_event("startup")
 async def startup_event():
-    global chemical_db, common_db
+    global chemical_db, common_db_trie
     try:
         env_path = Path('.') / '.env'
         if env_path.exists():
@@ -60,13 +63,12 @@ async def startup_event():
             with open(encrypted_path, "rb") as f:
                 encrypted_data = f.read()
             decrypted_data = Fernet(os.getenv("FERNET_KEY").encode()).decrypt(encrypted_data)
-            with open("temp.pkl", "wb") as f:
-                f.write(decrypted_data)
-            INCI_Catalog = pd.read_pickle("temp.pkl")
-            os.remove("temp.pkl")
+            INCI_Catalog = pd.read_pickle(io.BytesIO(decrypted_data))
             chemical_db = INCI_Catalog['INCI'].tolist()
-            common_db = chemical_db
-            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
+            # Construire le Trie pour les recherches floues
+            for i, chem in enumerate(chemical_db):
+                common_db_trie[chem.lower()] = i
+            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries and built Trie")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
     except Exception as e:
@@ -80,15 +82,16 @@ def validate_image_path(image_path: str) -> bool:
 @lru_cache(maxsize=1000)
 def get_top_chemicals(query: str, threshold: int = 85) -> str:
     query_lower = query.lower().strip()
-    logger.debug(f"Processing query: {query_lower}")
-    chemical_set = set(c.lower() for c in chemical_db)
-    if query_lower in chemical_set:
-        logger.debug(f"Exact match found for {query}")
+    logger.info(f"Processing query: {query_lower}")
+    if query_lower in common_db_trie:
+        logger.info(f"Exact match found for {query}")
         return query.capitalize()
     query_cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', query_lower)
     query_length = len(query_cleaned)
-    logger.debug(f"Cleaned query length: {query_length} ('{query_cleaned}')")
-    matches = [(chem, fuzz.WRatio(query_lower, chem.lower())) for chem in common_db]
+    candidates = common_db_trie.keys(prefix=query_cleaned[:3])  # Préfiltrer avec les 3 premiers caractères
+    matches = [(chem, fuzz.WRatio(query_lower, chem)) for chem in candidates]
+    if not matches:
+        matches = [(chem, fuzz.WRatio(query_lower, chem)) for chem in common_db_trie.keys()]
     matches.sort(key=lambda x: x[1], reverse=True)
     top_3_matches = matches[:3]
     logger.info(f"Top 3 matches for {query_lower}:")
@@ -109,30 +112,30 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
                     best_fuzzy_match = chem
                     best_fuzzy_diff = current_diff
     if best_fuzzy_match != "NF":
-        logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
+        logger.info(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
         return best_fuzzy_match
     logger.warning(f"No match found for {query_lower} with threshold {threshold}")
     return query.capitalize()
 
 def detect_separator(text: str) -> str | None:
-    possible_separators = [',', ';', '.', '*', '\n', '-']
-    counts = Counter(char for char in text if char in possible_separators)
-    logger.debug(f"Separator counts: {counts}")
+    possible_separators = [' ,', ' ;', ' *', ' +']
+    counts = Counter(text.count(sep) for sep in possible_separators)
+    logger.info(f"Separator counts: {counts}")
     if not counts:
-        logger.debug("No separator found")
+        logger.info("No separator found")
         return None
-    return max(counts, key=counts.get)
+    return max(possible_separators, key=lambda sep: text.count(sep))
 
 def process_inci_list(raw_text: str) -> str:
     if not raw_text:
         logger.warning("No raw text provided")
         return ""
-    logger.debug(f"Raw text received: {raw_text}")
+    logger.info(f"Raw text received: {raw_text}")
     cleaned_text = re.sub(r'[\n\r\s]+', ' ', raw_text.strip())
-    logger.debug(f"Cleaned text: {cleaned_text}")
+    logger.info(f"Cleaned text: {cleaned_text}")
     separator = detect_separator(cleaned_text)
-    logger.debug(f"Detected separator: {separator}")
-    ingredients = cleaned_text.split(separator) if separator else [cleaned_text]
+    logger.info(f"Detected separator: {separator}")
+    ingredients = [ing.strip() for ing in cleaned_text.split(separator.strip())] if separator else [cleaned_text]
     cleaned_ingredients = [
         re.sub(r'[^a-zA-Z0-9\s-]', '', ingredient).strip().capitalize()
         for ingredient in ingredients
@@ -151,11 +154,15 @@ def process_inci_list(raw_text: str) -> str:
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=min(4, len(unique_ingredients))) as executor:
+        profiler = cProfile.Profile()
+        profiler.enable()
         results = list(executor.map(
             lambda ing: get_top_chemicals(ing),
             unique_ingredients
         ))
+        profiler.disable()
+        profiler.print_stats()
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
@@ -207,7 +214,7 @@ async def index(request: Request, image: UploadFile = File(None)):
         filename = f"{timestamp}_{re.sub(r'[^a-zA-Z0-9._-]', '_', image.filename)}"
         image_path = os.path.join(UPLOAD_FOLDER, filename)
         with open(image_path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
+            buffer.write(await image.read())
         logger.info(f"Image saved at: {image_path}")
     except Exception as e:
         error = f"Erreur lors de la sauvegarde de l'image : {str(e)}"
@@ -217,10 +224,15 @@ async def index(request: Request, image: UploadFile = File(None)):
     try:
         logger.info("Attempting to open image for OCR")
         img = Image.open(image_path).convert('L')
-        img = ImageEnhance.Contrast(img).enhance(2.0)
+        # Amélioration de la qualité de l'image si nécessaire
+        if img.size[0] < 200 or img.size[1] < 200:  # Vérifier la résolution minimale
+            img = img.resize((300, 300), Image.Resampling.LANCZOS)
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(2.0)
+        img = img.filter(ImageFilter.SHARPEN)  # Ajouter un filtrage pour améliorer les bords
         logger.info("Image opened and preprocessed successfully")
-        raw_text = pytesseract.image_to_string(img, lang="eng+fra")
-        logger.debug(f"Raw extracted text: {raw_text}")
+        raw_text = pytesseract.image_to_string(img, lang="eng+fra", config='--psm 6')
+        logger.info(f"Raw extracted text: {raw_text}")
         start_time = time.time()
         extracted_text = process_inci_list(raw_text)
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
