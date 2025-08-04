@@ -8,7 +8,8 @@ import logging
 import cProfile
 import io
 import base64
-import requests
+from openai import OpenAI
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -24,11 +25,11 @@ from pytrie import Trie
 from pathlib import Path
 from cryptography.fernet import Fernet
 
-# Configuring logging setup to capture INFO-level messages and errors
-logging.basicConfig(
-    level=logging.INFO,
-    handlers=[logging.StreamHandler()]  # Force l'affichage sur stdout pour Render
-)
+# Charger les variables d'environnement depuis .env
+load_dotenv()
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
 # Initializing FastAPI application with middleware for trusted hosts
@@ -61,7 +62,7 @@ common_db_trie = Trie()
 async def startup_event():
     global chemical_db, common_db_trie
     try:
-        # Pas de load_dotenv(), car Render utilise les env vars
+        logger.info(f"Checking environment variables: OPENROUTER_API_KEY={os.getenv('OPENROUTER_API_KEY')}, FERNET_KEY={os.getenv('FERNET_KEY')}")
         TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
         encrypted_path = 'static/inci_only.pkl.enc'
@@ -302,37 +303,42 @@ async def delete_image(request: Request):
         logger.error(f"Error deleting image {image_path}: {str(e)}")
         return JSONResponse(content={"error": f"Erreur lors de la suppression de l'image : {str(e)}"}, status_code=500)
 
-# Performing OCR with OpenRouter Qwen2.5-VL-72B-Instruct
+# Performing OCR with OpenRouter using OpenAI client
 async def ocr_with_openrouter(image_path):
-    api_key = os.getenv("QWEN_API_KEY")
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise Exception("QWEN_API_KEY not found in environment")
-
+        raise Exception("OPENROUTER_API_KEY not found in environment")
+    
+    # Convertir l'image en base64
     with open(image_path, "rb") as image_file:
         image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
     
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://ocr-cosmetics.onrender.com",
-        "X-Title": "OCR Cosmetics"
-    }
-    payload = {
-        "model": "qwen/qwen2.5-vl-72b-instruct:free",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Extract all text from this image as a single string, focusing on ingredient lists."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-                ]
-            }
-        ],
-        "max_tokens": 2000
-    }
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
-    else:
-        raise Exception(f"API Error: {response.status_code} - {response.text}")
+    # Initialisation du client OpenAI
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
+
+    # Appel à l'API
+    try:
+        completion = client.chat.completions.create(
+            model="mistralai/mistral-small-3.2-24b-instruct:free",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Extract all text from this image as a single string, focusing on ingredient lists."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
+                        }
+                    ]
+                }
+            ]
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        raise Exception(f"API Error: {str(e)}")
