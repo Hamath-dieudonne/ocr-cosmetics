@@ -62,7 +62,7 @@ common_db_trie = Trie()
 async def startup_event():
     global chemical_db, common_db_trie
     try:
-        logger.info(f"Checking environment variables: OPENROUTER_API_KEY={os.getenv('OPENROUTER_API_KEY')}, FERNET_KEY={os.getenv('FERNET_KEY')}")
+        # logger.info(f"Checking environment variables: OPENROUTER_API_KEY={os.getenv('OPENROUTER_API_KEY')}, FERNET_KEY={os.getenv('FERNET_KEY')}")
         TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
         encrypted_path = 'static/inci_only.pkl.enc'
@@ -140,6 +140,9 @@ def process_inci_list(raw_text: str) -> str:
         logger.warning("No raw text provided")
         return ""
     logger.info(f"Raw text received: {raw_text}")
+    # Filtrer les artefacts comme "Presented As A Single String" ou "Copolymer" en début de texte
+    if raw_text.lower().startswith("presented") or "copolymer" in raw_text.lower().split()[0]:
+        raw_text = ' '.join(raw_text.split()[1:])
     cleaned_text = re.sub(r'[\n\r\s]+', ' ', raw_text.strip())
     logger.info(f"Cleaned text: {cleaned_text}")
     separator = detect_separator(cleaned_text)
