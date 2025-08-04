@@ -21,12 +21,14 @@ from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 from rapidfuzz import fuzz
 from pytrie import Trie
-from dotenv import load_dotenv
 from pathlib import Path
 from cryptography.fernet import Fernet
 
 # Configuring logging setup to capture INFO-level messages and errors
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[logging.StreamHandler()]  # Force l'affichage sur stdout pour Render
+)
 logger = logging.getLogger(__name__)
 
 # Initializing FastAPI application with middleware for trusted hosts
@@ -59,9 +61,7 @@ common_db_trie = Trie()
 async def startup_event():
     global chemical_db, common_db_trie
     try:
-        env_path = Path('.') / '.env'
-        if env_path.exists():
-            load_dotenv(dotenv_path=env_path)
+        # Pas de load_dotenv(), car Render utilise les env vars
         TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
         encrypted_path = 'static/inci_only.pkl.enc'
@@ -72,7 +72,7 @@ async def startup_event():
             INCI_Catalog = pd.read_pickle(io.BytesIO(decrypted_data))
             chemical_db = INCI_Catalog['INCI'].tolist()
             for chem in chemical_db:
-                common_db_trie[chem.lower()] = chem  # Storing original string
+                common_db_trie[chem.lower()] = chem
             logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries and built Trie")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
@@ -92,10 +92,10 @@ def get_top_chemicals(query: str, threshold: int = 80) -> str:
     logger.info(f"Processing query: {query_lower}")
     if query_lower in common_db_trie:
         logger.info(f"Exact match found for {query}")
-        return common_db_trie[query_lower]  # Returning original string
+        return common_db_trie[query_lower]
     query_cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', query_lower)
     query_length = len(query_cleaned)
-    candidates = list(common_db_trie.keys(prefix=query_cleaned[:3]))  # Pre-filtering
+    candidates = list(common_db_trie.keys(prefix=query_cleaned[:3]))
     if not candidates:
         candidates = list(common_db_trie.keys())
     matches = [(common_db_trie[chem], fuzz.WRatio(query_lower, chem)) for chem in candidates]
@@ -126,10 +126,9 @@ def detect_separator(text: str) -> str | None:
         logger.info("No separator found")
         return None
     dominant_separator = max(possible_separators, key=lambda sep: text.count(sep))
-    # Replacing all separators with a comma, excluding '/'
     normalized_text = text
     for sep in possible_separators:
-        if sep != ' /':  # Excluding '/' as a separator
+        if sep != ' /':
             normalized_text = normalized_text.replace(sep, ',')
     logger.info(f"Normalized text with separators replaced by comma: {normalized_text}")
     return ','
@@ -147,16 +146,15 @@ def process_inci_list(raw_text: str) -> str:
     if separator:
         normalized_text = cleaned_text
         for sep in [' ,', ';', '*', '+', '»']:
-            if sep != ' /':  # Excluding '/' as a separator
+            if sep != ' /':
                 normalized_text = normalized_text.replace(sep, ',')
-        # Cleaning multiple spaces and consecutive commas
         normalized_text = re.sub(r'\s+', ' ', normalized_text).replace(',,', ',').strip(',')
         logger.info(f"Normalized text after cleanup: {normalized_text}")
         ingredients = [part.strip() for part in normalized_text.split(',') if part.strip()]
     else:
         ingredients = [cleaned_text]
     cleaned_ingredients = [
-        re.sub(r'[^a-zA-Z0-9\s/-]', '', ingredient).strip().capitalize()  # Keep '/' and '-'
+        re.sub(r'[^a-zA-Z0-9\s/-]', '', ingredient).strip().capitalize()
         for ingredient in ingredients
         if ingredient.strip() and len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
     ]
@@ -179,7 +177,6 @@ def process_inci_list(raw_text: str) -> str:
         results = list(executor.map(get_top_chemicals, unique_ingredients))
         profiler.disable()
         profiler.print_stats()
-    # Correcting tuple error by ensuring results contain strings
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
@@ -307,21 +304,19 @@ async def delete_image(request: Request):
 
 # Performing OCR with OpenRouter Qwen2.5-VL-72B-Instruct
 async def ocr_with_openrouter(image_path):
-    load_dotenv()  # Charger les variables d'environnement
-    api_key = os.getenv("QWEN_API_KEY")
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise Exception("QWEN_API_KEY not found in .env")
+        raise Exception("OPENROUTER_API_KEY not found in environment")
 
     with open(image_path, "rb") as image_file:
-        # Encoding the image in base64
         image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
     
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://ocr-cosmetics.onrender.com",  # Remplacez par votre URL si différente
-        "X-Title": "OCR Cosmetics"  # Remplacez par le nom de votre site
+        "HTTP-Referer": "https://ocr-cosmetics.onrender.com",
+        "X-Title": "OCR Cosmetics"
     }
     payload = {
         "model": "qwen/qwen2.5-vl-72b-instruct:free",
