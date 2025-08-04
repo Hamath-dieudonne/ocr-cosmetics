@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance
 import pytesseract
 import shutil
 from urllib.parse import quote
@@ -124,10 +124,11 @@ def detect_separator(text: str) -> str | None:
         logger.info("No separator found")
         return None
     dominant_separator = max(possible_separators, key=lambda sep: text.count(sep))
-    # Remplacer tous les séparateurs par une virgule
+    # Remplacer tous les séparateurs par une virgule, sauf '/'
     normalized_text = text
     for sep in possible_separators:
-        normalized_text = normalized_text.replace(sep, ',')
+        if sep != ' /':  # Exclure '/' comme séparateur
+            normalized_text = normalized_text.replace(sep, ',')
     logger.info(f"Normalized text with separators replaced by comma: {normalized_text}")
     return ','
 
@@ -141,7 +142,21 @@ def process_inci_list(raw_text: str) -> str:
     separator = detect_separator(cleaned_text)
     logger.info(f"Detected separator: {separator}")
     if separator:
-        ingredients = [ing.strip() for ing in cleaned_text.replace(separator.strip(), ',').split(',')]
+        normalized_text = cleaned_text
+        for sep in [' ,', ';', '*', '+', '»']:
+            if sep != ' /':  # Exclure '/' comme séparateur
+                normalized_text = normalized_text.replace(sep, ',')
+        # Nettoyer les espaces multiples et les virgules consécutives
+        normalized_text = re.sub(r'\s+', ' ', normalized_text).replace(',,', ',').strip(',')
+        logger.info(f"Normalized text after cleanup: {normalized_text}")
+        # Scinder uniquement avec les séparateurs restants ('#' inclus, mais pas '/')
+        ingredients = []
+        for part in normalized_text.split(','):
+            sub_parts = re.split(r'[\s#+]+', part.strip())
+            for sub_part in sub_parts:
+                sub_part = sub_part.strip()
+                if sub_part:
+                    ingredients.append(sub_part)
     else:
         ingredients = [cleaned_text]
     cleaned_ingredients = [
@@ -162,7 +177,7 @@ def process_inci_list(raw_text: str) -> str:
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
-    with ThreadPoolExecutor(max_workers=min(4, len(unique_ingredients))) as executor:
+    with ThreadPoolExecutor(max_workers=min(2, len(unique_ingredients))) as executor:
         profiler = cProfile.Profile()
         profiler.enable()
         results = list(executor.map(get_top_chemicals, unique_ingredients))
@@ -234,10 +249,10 @@ async def index(request: Request, image: UploadFile = File(None)):
         if img.size[0] < 200 or img.size[1] < 200:
             img = img.resize((300, 300), Image.Resampling.LANCZOS)
         enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(2.0)
-        img = img.filter(ImageFilter.SHARPEN)
+        img = enhancer.enhance(1.5)  # Réduit de 2.0 à 1.5
+        # img = img.filter(ImageFilter.SHARPEN)  # Désactivé pour test
         ocr_start_time = time.time()
-        raw_text = pytesseract.image_to_string(img, lang="eng+fra", config='--psm 6')
+        raw_text = pytesseract.image_to_string(img, lang="eng+fra", config='--psm 6 --oem 3')
         logger.info(f"OCR completed in {time.time() - ocr_start_time:.2f} seconds. Raw extracted text: {raw_text}")
         start_time = time.time()
         extracted_text = process_inci_list(raw_text)
