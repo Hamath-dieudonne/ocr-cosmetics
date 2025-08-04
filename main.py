@@ -7,6 +7,8 @@ import time
 import logging
 import cProfile
 import io
+import base64
+import requests
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -241,42 +243,12 @@ async def index(request: Request, image: UploadFile = File(None)):
         return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true", status_code=303)
 
     try:
-        logger.info("Attempting to open image for OCR")
-        img = Image.open(image_path).convert('L')
-        # Detecting text regions by analyzing pixel variance
-        def find_text_regions(image):
-            pixels = list(image.getdata())
-            width, height = image.size
-            rows_variance = []
-            for y in range(height):
-                row = pixels[y * width:(y + 1) * width]
-                variance = sum((x - sum(row) / len(row)) ** 2 for x in row) / len(row)
-                rows_variance.append(variance)
-            threshold_variance = max(rows_variance) * 0.1
-            text_rows = [i for i, v in enumerate(rows_variance) if v > threshold_variance]
-            if not text_rows:
-                return (0, 0, width, height)  # Return full image if no text detected
-            top = max(0, min(text_rows) - 10)  # Margin of 10 pixels
-            bottom = min(height, max(text_rows) + 10)
-            return (0, top, width, bottom)
-
-        # Cropping image to text regions
-        crop_box = find_text_regions(img)
-        cropped_img = img.crop(crop_box)
-        logger.info(f"Image cropped to dimensions: {cropped_img.size}")
-
-        # Adjusting resolution if too small
-        if cropped_img.size[0] < 200 or cropped_img.size[1] < 200:
-            cropped_img = cropped_img.resize((200, 200), Image.Resampling.LANCZOS)
-
-        # Enhancing contrast on cropped region
-        enhancer = ImageEnhance.Contrast(cropped_img)
-        enhanced_img = enhancer.enhance(1.5)
+        logger.info("Attempting to open image for OCR with OpenRouter")
         ocr_start_time = time.time()
-        raw_text = pytesseract.image_to_string(enhanced_img, lang="eng+fra", config='--psm 6 --oem 3 --dpi 150')
-        logger.info(f"OCR completed in {time.time() - ocr_start_time:.2f} seconds. Raw extracted text: {raw_text}")
+        extracted_text = await ocr_with_openrouter(image_path)
+        logger.info(f"OCR completed in {time.time() - ocr_start_time:.2f} seconds. Extracted text: {extracted_text}")
         start_time = time.time()
-        extracted_text = process_inci_list(raw_text)
+        extracted_text = process_inci_list(extracted_text)
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
     except Exception as e:
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
@@ -332,3 +304,40 @@ async def delete_image(request: Request):
     except Exception as e:
         logger.error(f"Error deleting image {image_path}: {str(e)}")
         return JSONResponse(content={"error": f"Erreur lors de la suppression de l'image : {str(e)}"}, status_code=500)
+
+# Performing OCR with OpenRouter Qwen2.5-VL-72B-Instruct
+async def ocr_with_openrouter(image_path):
+    load_dotenv()  # Charger les variables d'environnement
+    api_key = os.getenv("QWEN_API_KEY")
+    if not api_key:
+        raise Exception("QWEN_API_KEY not found in .env")
+
+    with open(image_path, "rb") as image_file:
+        # Encoding the image in base64
+        image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://ocr-cosmetics.onrender.com",  # Remplacez par votre URL si différente
+        "X-Title": "OCR Cosmetics"  # Remplacez par le nom de votre site
+    }
+    payload = {
+        "model": "qwen/qwen2.5-vl-72b-instruct:free",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Extract all text from this image as a single string, focusing on ingredient lists."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                ]
+            }
+        ],
+        "max_tokens": 2000
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code == 200:
+        return response.json()["choices"][0]["message"]["content"]
+    else:
+        raise Exception(f"API Error: {response.status_code} - {response.text}")
