@@ -23,15 +23,17 @@ from dotenv import load_dotenv
 from pathlib import Path
 from cryptography.fernet import Fernet
 
-# Configurer le logging
+# Configuring logging setup to capture INFO-level messages and errors
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initializing FastAPI application with middleware for trusted hosts
 app = FastAPI()
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "0.0.0.0", "ocr-cosmetics.onrender.com"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# Serving static files with path validation
 @app.get("/static/{file_path:path}")
 async def serve_static(file_path: str):
     file_path = os.path.normpath(file_path)
@@ -42,6 +44,7 @@ async def serve_static(file_path: str):
         return JSONResponse(content={"error": "Access denied"}, status_code=404)
     return FileResponse(full_path)
 
+# Defining upload folder and maximum file size
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
@@ -49,6 +52,7 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 chemical_db = []
 common_db_trie = Trie()
 
+# Loading INCI catalog and initializing Trie during application startup
 @app.on_event("startup")
 async def startup_event():
     global chemical_db, common_db_trie
@@ -66,28 +70,30 @@ async def startup_event():
             INCI_Catalog = pd.read_pickle(io.BytesIO(decrypted_data))
             chemical_db = INCI_Catalog['INCI'].tolist()
             for chem in chemical_db:
-                common_db_trie[chem.lower()] = chem  # Stocker la chaîne originale
+                common_db_trie[chem.lower()] = chem  # Storing original string
             logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries and built Trie")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
     except Exception as e:
         logger.error(f"Error loading INCI catalog or environment: {str(e)}")
 
+# Validating image path security
 def validate_image_path(image_path: str) -> bool:
     abs_image_path = os.path.abspath(image_path)
     abs_upload_folder = os.path.abspath(UPLOAD_FOLDER)
     return abs_image_path.startswith(abs_upload_folder) and os.path.exists(image_path)
 
+# Caching top chemical matches with LRU cache
 @lru_cache(maxsize=1000)
-def get_top_chemicals(query: str, threshold: int = 85) -> str:
+def get_top_chemicals(query: str, threshold: int = 80) -> str:
     query_lower = query.lower().strip()
     logger.info(f"Processing query: {query_lower}")
     if query_lower in common_db_trie:
         logger.info(f"Exact match found for {query}")
-        return common_db_trie[query_lower]  # Retourner la chaîne originale
+        return common_db_trie[query_lower]  # Returning original string
     query_cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', query_lower)
     query_length = len(query_cleaned)
-    candidates = list(common_db_trie.keys(prefix=query_cleaned[:3]))  # Préfiltrer
+    candidates = list(common_db_trie.keys(prefix=query_cleaned[:3]))  # Pre-filtering
     if not candidates:
         candidates = list(common_db_trie.keys())
     matches = [(common_db_trie[chem], fuzz.WRatio(query_lower, chem)) for chem in candidates]
@@ -98,24 +104,18 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
         logger.info(f"  - {chem} (score: {score})")
     best_fuzzy_match = "NF"
     best_fuzzy_score = 0
-    best_fuzzy_diff = float('inf')
     for chem, score in top_3_matches:
         if score >= threshold:
-            if score > best_fuzzy_score:
+            if score > best_fuzzy_score or (score == best_fuzzy_score and len(chem) > len(best_fuzzy_match)):
                 best_fuzzy_score = score
                 best_fuzzy_match = chem
-                best_fuzzy_diff = abs(len(chem) - query_length)
-            elif score == best_fuzzy_score:
-                current_diff = abs(len(chem) - query_length)
-                if current_diff < best_fuzzy_diff:
-                    best_fuzzy_match = chem
-                    best_fuzzy_diff = current_diff
     if best_fuzzy_match != "NF":
         logger.info(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
         return best_fuzzy_match
     logger.warning(f"No match found for {query_lower} with threshold {threshold}")
     return query.capitalize()
 
+# Detecting dominant separator in text
 def detect_separator(text: str) -> str | None:
     possible_separators = [' ,', ';', '*', '+', '»']
     counts = Counter(text.count(sep) for sep in possible_separators)
@@ -124,14 +124,15 @@ def detect_separator(text: str) -> str | None:
         logger.info("No separator found")
         return None
     dominant_separator = max(possible_separators, key=lambda sep: text.count(sep))
-    # Remplacer tous les séparateurs par une virgule, sauf '/'
+    # Replacing all separators with a comma, excluding '/'
     normalized_text = text
     for sep in possible_separators:
-        if sep != ' /':  # Exclure '/' comme séparateur
+        if sep != ' /':  # Excluding '/' as a separator
             normalized_text = normalized_text.replace(sep, ',')
     logger.info(f"Normalized text with separators replaced by comma: {normalized_text}")
     return ','
 
+# Processing INCI list from raw text
 def process_inci_list(raw_text: str) -> str:
     if not raw_text:
         logger.warning("No raw text provided")
@@ -144,23 +145,16 @@ def process_inci_list(raw_text: str) -> str:
     if separator:
         normalized_text = cleaned_text
         for sep in [' ,', ';', '*', '+', '»']:
-            if sep != ' /':  # Exclure '/' comme séparateur
+            if sep != ' /':  # Excluding '/' as a separator
                 normalized_text = normalized_text.replace(sep, ',')
-        # Nettoyer les espaces multiples et les virgules consécutives
+        # Cleaning multiple spaces and consecutive commas
         normalized_text = re.sub(r'\s+', ' ', normalized_text).replace(',,', ',').strip(',')
         logger.info(f"Normalized text after cleanup: {normalized_text}")
-        # Scinder uniquement avec les séparateurs restants ('#' inclus, mais pas '/')
-        ingredients = []
-        for part in normalized_text.split(','):
-            sub_parts = re.split(r'[\s#+]+', part.strip())
-            for sub_part in sub_parts:
-                sub_part = sub_part.strip()
-                if sub_part:
-                    ingredients.append(sub_part)
+        ingredients = [part.strip() for part in normalized_text.split(',') if part.strip()]
     else:
         ingredients = [cleaned_text]
     cleaned_ingredients = [
-        re.sub(r'[^a-zA-Z0-9\s-]', '', ingredient).strip().capitalize()
+        re.sub(r'[^a-zA-Z0-9\s/-]', '', ingredient).strip().capitalize()  # Keep '/' and '-'
         for ingredient in ingredients
         if ingredient.strip() and len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
     ]
@@ -177,22 +171,24 @@ def process_inci_list(raw_text: str) -> str:
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
-    with ThreadPoolExecutor(max_workers=min(2, len(unique_ingredients))) as executor:
+    with ThreadPoolExecutor(max_workers=2 if len(unique_ingredients) > 2 else 1) as executor:
         profiler = cProfile.Profile()
         profiler.enable()
         results = list(executor.map(get_top_chemicals, unique_ingredients))
         profiler.disable()
         profiler.print_stats()
-    # Correction de l'erreur 'tuple' en s'assurant que results contient des chaînes
+    # Correcting tuple error by ensuring results contain strings
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
 
+# Handling HEAD request for root
 @app.head("/")
 async def head_root():
     logger.info("HEAD request received for /")
     return Response(status_code=200)
 
+# Rendering index page with GET request
 @app.get("/")
 async def index(request: Request, extracted_text: str | None = None, image_path: str | None = None, error: str | None = None, has_submitted: bool = False, is_loading: bool = False):
     logger.info("GET request received for /")
@@ -206,6 +202,7 @@ async def index(request: Request, extracted_text: str | None = None, image_path:
     }
     return templates.TemplateResponse("index.html", context)
 
+# Handling image upload and OCR processing with POST request
 @app.post("/")
 async def index(request: Request, image: UploadFile = File(None)):
     logger.info("POST request received")
@@ -246,13 +243,37 @@ async def index(request: Request, image: UploadFile = File(None)):
     try:
         logger.info("Attempting to open image for OCR")
         img = Image.open(image_path).convert('L')
-        if img.size[0] < 200 or img.size[1] < 200:
-            img = img.resize((300, 300), Image.Resampling.LANCZOS)
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(1.5)  # Réduit de 2.0 à 1.5
-        # img = img.filter(ImageFilter.SHARPEN)  # Désactivé pour test
+        # Detecting text regions by analyzing pixel variance
+        def find_text_regions(image):
+            pixels = list(image.getdata())
+            width, height = image.size
+            rows_variance = []
+            for y in range(height):
+                row = pixels[y * width:(y + 1) * width]
+                variance = sum((x - sum(row) / len(row)) ** 2 for x in row) / len(row)
+                rows_variance.append(variance)
+            threshold_variance = max(rows_variance) * 0.1
+            text_rows = [i for i, v in enumerate(rows_variance) if v > threshold_variance]
+            if not text_rows:
+                return (0, 0, width, height)  # Return full image if no text detected
+            top = max(0, min(text_rows) - 10)  # Margin of 10 pixels
+            bottom = min(height, max(text_rows) + 10)
+            return (0, top, width, bottom)
+
+        # Cropping image to text regions
+        crop_box = find_text_regions(img)
+        cropped_img = img.crop(crop_box)
+        logger.info(f"Image cropped to dimensions: {cropped_img.size}")
+
+        # Adjusting resolution if too small
+        if cropped_img.size[0] < 200 or cropped_img.size[1] < 200:
+            cropped_img = cropped_img.resize((200, 200), Image.Resampling.LANCZOS)
+
+        # Enhancing contrast on cropped region
+        enhancer = ImageEnhance.Contrast(cropped_img)
+        enhanced_img = enhancer.enhance(1.5)
         ocr_start_time = time.time()
-        raw_text = pytesseract.image_to_string(img, lang="eng+fra", config='--psm 6 --oem 3')
+        raw_text = pytesseract.image_to_string(enhanced_img, lang="eng+fra", config='--psm 6 --oem 3 --dpi 150')
         logger.info(f"OCR completed in {time.time() - ocr_start_time:.2f} seconds. Raw extracted text: {raw_text}")
         start_time = time.time()
         extracted_text = process_inci_list(raw_text)
@@ -274,6 +295,7 @@ async def index(request: Request, image: UploadFile = File(None)):
     redirect_url = "/?" + "&".join(query_params) if query_params else "/"
     return RedirectResponse(url=redirect_url, status_code=303)
 
+# Cleaning up old images
 @app.get("/cleanup")
 async def cleanup():
     logger.info("Cleaning up old images")
@@ -282,7 +304,7 @@ async def cleanup():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         if os.path.isfile(file_path):
             file_age = current_time - os.path.getmtime(file_path)
-            if file_age > 3600:  # 1 heure
+            if file_age > 3600:  # 1 hour
                 try:
                     os.remove(file_path)
                     logger.info(f"Deleted old file: {file_path}")
@@ -290,6 +312,7 @@ async def cleanup():
                     logger.error(f"Error deleting old file {file_path}: {str(e)}")
     return {"message": "Cleanup completed"}
 
+# Deleting a specific image
 @app.post("/delete_image")
 async def delete_image(request: Request):
     try:
