@@ -79,7 +79,7 @@ def validate_image_path(image_path: str) -> bool:
     return abs_image_path.startswith(abs_upload_folder) and os.path.exists(image_path)
 
 @lru_cache(maxsize=1000)
-def get_top_chemicals(query: str, threshold: int = 75) -> str:
+def get_top_chemicals(query: str, threshold: int = 85) -> str:
     query_lower = query.lower().strip()
     logger.info(f"Processing query: {query_lower}")
     if query_lower in common_db_trie:
