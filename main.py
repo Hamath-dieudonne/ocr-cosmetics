@@ -117,13 +117,19 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
     return query.capitalize()
 
 def detect_separator(text: str) -> str | None:
-    possible_separators = [' ,', ' ;', ' *', ' +']
+    possible_separators = [' ,', ';', '*', '+', '»']
     counts = Counter(text.count(sep) for sep in possible_separators)
     logger.info(f"Separator counts: {counts}")
     if not counts or max(counts.values()) == 0:
         logger.info("No separator found")
         return None
-    return max(possible_separators, key=lambda sep: text.count(sep))
+    dominant_separator = max(possible_separators, key=lambda sep: text.count(sep))
+    # Remplacer tous les séparateurs par une virgule
+    normalized_text = text
+    for sep in possible_separators:
+        normalized_text = normalized_text.replace(sep, ',')
+    logger.info(f"Normalized text with separators replaced by comma: {normalized_text}")
+    return ','
 
 def process_inci_list(raw_text: str) -> str:
     if not raw_text:
@@ -134,7 +140,10 @@ def process_inci_list(raw_text: str) -> str:
     logger.info(f"Cleaned text: {cleaned_text}")
     separator = detect_separator(cleaned_text)
     logger.info(f"Detected separator: {separator}")
-    ingredients = [ing.strip() for ing in cleaned_text.split(separator.strip())] if separator else [cleaned_text]
+    if separator:
+        ingredients = [ing.strip() for ing in cleaned_text.replace(separator.strip(), ',').split(',')]
+    else:
+        ingredients = [cleaned_text]
     cleaned_ingredients = [
         re.sub(r'[^a-zA-Z0-9\s-]', '', ingredient).strip().capitalize()
         for ingredient in ingredients
@@ -160,7 +169,7 @@ def process_inci_list(raw_text: str) -> str:
         profiler.disable()
         profiler.print_stats()
     # Correction de l'erreur 'tuple' en s'assurant que results contient des chaînes
-    unique_ingredients = [match if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
+    unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
 
