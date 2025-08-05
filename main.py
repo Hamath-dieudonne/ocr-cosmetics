@@ -5,11 +5,6 @@ import pandas as pd
 from functools import lru_cache
 import time
 import logging
-import cProfile
-import io
-import base64
-from openai import OpenAI
-from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -20,25 +15,20 @@ import pytesseract
 import shutil
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
-from rapidfuzz import fuzz
-from pytrie import Trie
+from fuzzywuzzy import fuzz
+from dotenv import load_dotenv
 from pathlib import Path
 from cryptography.fernet import Fernet
 
-# Charger les variables d'environnement depuis .env
-load_dotenv()
-
-# Configuration du logging
-logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
+# Configurer le logging
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initializing FastAPI application with middleware for trusted hosts
 app = FastAPI()
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "0.0.0.0", "ocr-cosmetics.onrender.com"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Serving static files with path validation
 @app.get("/static/{file_path:path}")
 async def serve_static(file_path: str):
     file_path = os.path.normpath(file_path)
@@ -49,20 +39,20 @@ async def serve_static(file_path: str):
         return JSONResponse(content={"error": "Access denied"}, status_code=404)
     return FileResponse(full_path)
 
-# Defining upload folder and maximum file size
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 chemical_db = []
-common_db_trie = Trie()
+common_db = []
 
-# Loading INCI catalog and initializing Trie during application startup
 @app.on_event("startup")
 async def startup_event():
-    global chemical_db, common_db_trie
+    global chemical_db, common_db
     try:
-        # logger.info(f"Checking environment variables: OPENROUTER_API_KEY={os.getenv('OPENROUTER_API_KEY')}, FERNET_KEY={os.getenv('FERNET_KEY')}")
+        env_path = Path('.') / '.env'
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path)
         TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
         encrypted_path = 'static/inci_only.pkl.enc'
@@ -70,36 +60,35 @@ async def startup_event():
             with open(encrypted_path, "rb") as f:
                 encrypted_data = f.read()
             decrypted_data = Fernet(os.getenv("FERNET_KEY").encode()).decrypt(encrypted_data)
-            INCI_Catalog = pd.read_pickle(io.BytesIO(decrypted_data))
+            with open("temp.pkl", "wb") as f:
+                f.write(decrypted_data)
+            INCI_Catalog = pd.read_pickle("temp.pkl")
+            os.remove("temp.pkl")
             chemical_db = INCI_Catalog['INCI'].tolist()
-            for chem in chemical_db:
-                common_db_trie[chem.lower()] = chem
-            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries and built Trie")
+            common_db = chemical_db
+            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
     except Exception as e:
         logger.error(f"Error loading INCI catalog or environment: {str(e)}")
 
-# Validating image path security
 def validate_image_path(image_path: str) -> bool:
     abs_image_path = os.path.abspath(image_path)
     abs_upload_folder = os.path.abspath(UPLOAD_FOLDER)
     return abs_image_path.startswith(abs_upload_folder) and os.path.exists(image_path)
 
-# Caching top chemical matches with LRU cache
 @lru_cache(maxsize=1000)
-def get_top_chemicals(query: str, threshold: int = 80) -> str:
+def get_top_chemicals(query: str, threshold: int = 85) -> str:
     query_lower = query.lower().strip()
-    logger.info(f"Processing query: {query_lower}")
-    if query_lower in common_db_trie:
-        logger.info(f"Exact match found for {query}")
-        return common_db_trie[query_lower]
+    logger.debug(f"Processing query: {query_lower}")
+    chemical_set = set(c.lower() for c in chemical_db)
+    if query_lower in chemical_set:
+        logger.debug(f"Exact match found for {query}")
+        return query.capitalize()
     query_cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', query_lower)
     query_length = len(query_cleaned)
-    candidates = list(common_db_trie.keys(prefix=query_cleaned[:3]))
-    if not candidates:
-        candidates = list(common_db_trie.keys())
-    matches = [(common_db_trie[chem], fuzz.WRatio(query_lower, chem)) for chem in candidates]
+    logger.debug(f"Cleaned query length: {query_length} ('{query_cleaned}')")
+    matches = [(chem, fuzz.WRatio(query_lower, chem.lower())) for chem in common_db]
     matches.sort(key=lambda x: x[1], reverse=True)
     top_3_matches = matches[:3]
     logger.info(f"Top 3 matches for {query_lower}:")
@@ -107,61 +96,55 @@ def get_top_chemicals(query: str, threshold: int = 80) -> str:
         logger.info(f"  - {chem} (score: {score})")
     best_fuzzy_match = "NF"
     best_fuzzy_score = 0
+    best_fuzzy_diff = float('inf')
     for chem, score in top_3_matches:
         if score >= threshold:
-            if score > best_fuzzy_score or (score == best_fuzzy_score and len(chem) > len(best_fuzzy_match)):
+            if score > best_fuzzy_score:
                 best_fuzzy_score = score
                 best_fuzzy_match = chem
+                best_fuzzy_diff = abs(len(chem) - query_length)
+            elif score == best_fuzzy_score:
+                current_diff = abs(len(chem) - query_length)
+                if current_diff < best_fuzzy_diff:
+                    best_fuzzy_match = chem
+                    best_fuzzy_diff = current_diff
     if best_fuzzy_match != "NF":
-        logger.info(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
+        logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
         return best_fuzzy_match
     logger.warning(f"No match found for {query_lower} with threshold {threshold}")
     return query.capitalize()
 
-# Detecting dominant separator in text
 def detect_separator(text: str) -> str | None:
-    possible_separators = [' ,', ';', '*', '+', '»']
-    counts = Counter(text.count(sep) for sep in possible_separators)
-    logger.info(f"Separator counts: {counts}")
-    if not counts or max(counts.values()) == 0:
-        logger.info("No separator found")
+    possible_separators = [',', '.', '\n', '-']
+    counts = Counter(char for char in text if char in possible_separators)
+    logger.debug(f"Separator counts: {counts}")
+    if not counts:
+        logger.debug("No separator found")
         return None
-    dominant_separator = max(possible_separators, key=lambda sep: text.count(sep))
-    normalized_text = text
-    for sep in possible_separators:
-        if sep != ' /':
-            normalized_text = normalized_text.replace(sep, ',')
-    logger.info(f"Normalized text with separators replaced by comma: {normalized_text}")
-    return ','
+    return max(counts, key=counts.get)
 
-# Processing INCI list from raw text
 def process_inci_list(raw_text: str) -> str:
     if not raw_text:
         logger.warning("No raw text provided")
         return ""
-    logger.info(f"Raw text received: {raw_text}")
-    # Filtrer les artefacts comme "Presented As A Single String" ou "Copolymer" en début de texte
-    if raw_text.lower().startswith("presented") or "copolymer" in raw_text.lower().split()[0]:
-        raw_text = ' '.join(raw_text.split()[1:])
-    cleaned_text = re.sub(r'[\n\r\s]+', ' ', raw_text.strip())
-    logger.info(f"Cleaned text: {cleaned_text}")
+    logger.debug(f"Raw text received: {raw_text}")
+    
+    # Remplacer les séparateurs ';', '*', '+' par ','
+    cleaned_text = re.sub(r'[;*\+\n\r\s]+', ',', raw_text.strip())
+    logger.debug(f"Cleaned text after separator replacement: {cleaned_text}")
+    
+    # Détecter le séparateur principal
     separator = detect_separator(cleaned_text)
-    logger.info(f"Detected separator: {separator}")
-    if separator:
-        normalized_text = cleaned_text
-        for sep in [' ,', ';', '*', '+', '»']:
-            if sep != ' /':
-                normalized_text = normalized_text.replace(sep, ',')
-        normalized_text = re.sub(r'\s+', ' ', normalized_text).replace(',,', ',').strip(',')
-        logger.info(f"Normalized text after cleanup: {normalized_text}")
-        ingredients = [part.strip() for part in normalized_text.split(',') if part.strip()]
-    else:
-        ingredients = [cleaned_text]
+    logger.debug(f"Detected separator: {separator}")
+    
+    # Diviser le texte en ingrédients
+    ingredients = cleaned_text.split(separator) if separator else [cleaned_text]
     cleaned_ingredients = [
-        re.sub(r'[^a-zA-Z0-9\s/-]', '', ingredient).strip().capitalize()
+        re.sub(r'[^a-zA-Z0-9\s-]', '', ingredient).strip().capitalize()
         for ingredient in ingredients
         if ingredient.strip() and len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
     ]
+    
     if not cleaned_ingredients:
         potential_ingredients = re.findall(r'\b[A-Z][a-zA-Z0-9\s-]*\b', cleaned_text)
         cleaned_ingredients = [
@@ -169,29 +152,29 @@ def process_inci_list(raw_text: str) -> str:
             for ingredient in potential_ingredients
             if len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
         ]
+    
     if not cleaned_ingredients:
         logger.warning("No valid ingredients detected after processing")
         return "Aucun ingrédient détecté"
+    
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
-    with ThreadPoolExecutor(max_workers=2 if len(unique_ingredients) > 2 else 1) as executor:
-        profiler = cProfile.Profile()
-        profiler.enable()
-        results = list(executor.map(get_top_chemicals, unique_ingredients))
-        profiler.disable()
-        profiler.print_stats()
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(
+            lambda ing: get_top_chemicals(ing),
+            unique_ingredients
+        ))
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
+    
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
 
-# Handling HEAD request for root
 @app.head("/")
 async def head_root():
     logger.info("HEAD request received for /")
     return Response(status_code=200)
 
-# Rendering index page with GET request
 @app.get("/")
 async def index(request: Request, extracted_text: str | None = None, image_path: str | None = None, error: str | None = None, has_submitted: bool = False, is_loading: bool = False):
     logger.info("GET request received for /")
@@ -205,7 +188,6 @@ async def index(request: Request, extracted_text: str | None = None, image_path:
     }
     return templates.TemplateResponse("index.html", context)
 
-# Handling image upload and OCR processing with POST request
 @app.post("/")
 async def index(request: Request, image: UploadFile = File(None)):
     logger.info("POST request received")
@@ -213,7 +195,6 @@ async def index(request: Request, image: UploadFile = File(None)):
     image_path = None
     error = None
     has_submitted = True
-    total_start_time = time.time()
 
     if image is None or not image.filename:
         error = "Aucune image reçue ou nom de fichier vide"
@@ -236,7 +217,7 @@ async def index(request: Request, image: UploadFile = File(None)):
         filename = f"{timestamp}_{re.sub(r'[^a-zA-Z0-9._-]', '_', image.filename)}"
         image_path = os.path.join(UPLOAD_FOLDER, filename)
         with open(image_path, "wb") as buffer:
-            buffer.write(await image.read())
+            shutil.copyfileobj(image.file, buffer)
         logger.info(f"Image saved at: {image_path}")
     except Exception as e:
         error = f"Erreur lors de la sauvegarde de l'image : {str(e)}"
@@ -244,18 +225,19 @@ async def index(request: Request, image: UploadFile = File(None)):
         return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true", status_code=303)
 
     try:
-        logger.info("Attempting to open image for OCR with OpenRouter")
-        ocr_start_time = time.time()
-        extracted_text = await ocr_with_openrouter(image_path)
-        logger.info(f"OCR completed in {time.time() - ocr_start_time:.2f} seconds. Extracted text: {extracted_text}")
+        logger.info("Attempting to open image for OCR")
+        img = Image.open(image_path).convert('L')
+        img = ImageEnhance.Contrast(img).enhance(2.0)
+        logger.info("Image opened and preprocessed successfully")
+        raw_text = pytesseract.image_to_string(img, lang="eng+fra")
+        logger.debug(f"Raw extracted text: {raw_text}")
         start_time = time.time()
-        extracted_text = process_inci_list(extracted_text)
+        extracted_text = process_inci_list(raw_text)
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
     except Exception as e:
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
         logger.error(error)
 
-    logger.info(f"Total processing time: {time.time() - total_start_time:.2f} seconds")
     query_params = []
     if extracted_text:
         query_params.append(f"extracted_text={quote(extracted_text)}")
@@ -268,7 +250,6 @@ async def index(request: Request, image: UploadFile = File(None)):
     redirect_url = "/?" + "&".join(query_params) if query_params else "/"
     return RedirectResponse(url=redirect_url, status_code=303)
 
-# Cleaning up old images
 @app.get("/cleanup")
 async def cleanup():
     logger.info("Cleaning up old images")
@@ -277,7 +258,7 @@ async def cleanup():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         if os.path.isfile(file_path):
             file_age = current_time - os.path.getmtime(file_path)
-            if file_age > 3600:  # 1 hour
+            if file_age > 3600:  # 1 heure
                 try:
                     os.remove(file_path)
                     logger.info(f"Deleted old file: {file_path}")
@@ -285,7 +266,6 @@ async def cleanup():
                     logger.error(f"Error deleting old file {file_path}: {str(e)}")
     return {"message": "Cleanup completed"}
 
-# Deleting a specific image
 @app.post("/delete_image")
 async def delete_image(request: Request):
     try:
@@ -305,43 +285,3 @@ async def delete_image(request: Request):
     except Exception as e:
         logger.error(f"Error deleting image {image_path}: {str(e)}")
         return JSONResponse(content={"error": f"Erreur lors de la suppression de l'image : {str(e)}"}, status_code=500)
-
-# Performing OCR with OpenRouter using OpenAI client
-async def ocr_with_openrouter(image_path):
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise Exception("OPENROUTER_API_KEY not found in environment")
-    
-    # Convertir l'image en base64
-    with open(image_path, "rb") as image_file:
-        image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
-    
-    # Initialisation du client OpenAI
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-    )
-
-    # Appel à l'API
-    try:
-        completion = client.chat.completions.create(
-            model="mistralai/mistral-small-3.2-24b-instruct:free",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Extract all text from this image as a single string, focusing on ingredient lists."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
-                        }
-                    ]
-                }
-            ]
-        )
-        return completion.choices[0].message.content
-    except Exception as e:
-        raise Exception(f"API Error: {str(e)}")
