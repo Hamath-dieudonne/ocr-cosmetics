@@ -5,7 +5,7 @@ import pandas as pd
 from functools import lru_cache
 import time
 import logging
-from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Response
+from fastapi import FastAPI, File, UploadFile, Request, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
@@ -19,6 +19,9 @@ from fuzzywuzzy import fuzz
 from dotenv import load_dotenv
 from pathlib import Path
 from cryptography.fernet import Fernet
+import cProfile
+import pstats
+import io
 
 # Configurer le logging
 logging.basicConfig(level=logging.DEBUG)
@@ -28,6 +31,10 @@ app = FastAPI()
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "0.0.0.0", "ocr-cosmetics.onrender.com"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+# Précompiler les regex
+SEPARATOR_RE = re.compile(r'[;*\+\»]+')
+CLEAN_INGREDIENT_RE = re.compile(r'[^a-zA-Z0-9\s-]')
 
 @app.get("/static/{file_path:path}")
 async def serve_static(file_path: str):
@@ -85,7 +92,7 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
     if query_lower in chemical_set:
         logger.debug(f"Exact match found for {query}")
         return query.capitalize()
-    query_cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', query_lower)
+    query_cleaned = CLEAN_INGREDIENT_RE.sub('', query_lower)
     query_length = len(query_cleaned)
     logger.debug(f"Cleaned query length: {query_length} ('{query_cleaned}')")
     matches = [(chem, fuzz.WRatio(query_lower, chem.lower())) for chem in common_db]
@@ -115,7 +122,7 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
     return query.capitalize()
 
 def detect_separator(text: str) -> str | None:
-    possible_separators = [' ,']
+    possible_separators = [',']
     counts = Counter(char for char in text if char in possible_separators)
     logger.debug(f"Separator counts: {counts}")
     if not counts:
@@ -129,8 +136,8 @@ def process_inci_list(raw_text: str) -> str:
         return ""
     logger.debug(f"Raw text received: {raw_text}")
     
-    # Remplacer les séparateurs ';', '*', '+' par ','
-    cleaned_text = re.sub(r'[;*\+\»]+', ' ,', raw_text.strip())
+    # Remplacer les séparateurs ';', '*', '+', '»' par ','
+    cleaned_text = SEPARATOR_RE.sub(',', raw_text.strip())
     logger.debug(f"Cleaned text after separator replacement: {cleaned_text}")
     
     # Détecter le séparateur principal
@@ -140,7 +147,7 @@ def process_inci_list(raw_text: str) -> str:
     # Diviser le texte en ingrédients
     ingredients = cleaned_text.split(separator) if separator else [cleaned_text]
     cleaned_ingredients = [
-        re.sub(r'[^a-zA-Z0-9\s-]', '', ingredient).strip().capitalize()
+        CLEAN_INGREDIENT_RE.sub('', ingredient).strip().capitalize()
         for ingredient in ingredients
         if ingredient.strip() and len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
     ]
@@ -148,7 +155,7 @@ def process_inci_list(raw_text: str) -> str:
     if not cleaned_ingredients:
         potential_ingredients = re.findall(r'\b[A-Z][a-zA-Z0-9\s-]*\b', cleaned_text)
         cleaned_ingredients = [
-            re.sub(r'[^a-zA-Z0-9\s-]', '', ingredient).strip().capitalize()
+            CLEAN_INGREDIENT_RE.sub('', ingredient).strip().capitalize()
             for ingredient in potential_ingredients
             if len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
         ]
@@ -160,11 +167,11 @@ def process_inci_list(raw_text: str) -> str:
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        results = list(executor.map(
-            lambda ing: get_top_chemicals(ing),
-            unique_ingredients
-        ))
+    if len(unique_ingredients) < 10:
+        results = [get_top_chemicals(ing) for ing in unique_ingredients]
+    else:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda ing: get_top_chemicals(ing), unique_ingredients))
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     
@@ -231,9 +238,23 @@ async def index(request: Request, image: UploadFile = File(None)):
         logger.info("Image opened and preprocessed successfully")
         raw_text = pytesseract.image_to_string(img, lang="eng+fra")
         logger.debug(f"Raw extracted text: {raw_text}")
+        
+        # Profilage de process_inci_list
+        profiler = cProfile.Profile()
+        profiler.enable()
         start_time = time.time()
         extracted_text = process_inci_list(raw_text)
+        profiler.disable()
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
+        
+        # Sauvegarder les résultats du profilage
+        s = io.StringIO()
+        ps = pstats.Stats(profiler, stream=s).sort_stats('cumulative')
+        ps.print_stats()
+        with open('profile_output.txt', 'w') as f:
+            f.write(s.getvalue())
+        logger.info("Profiling results saved to profile_output.txt")
+
     except Exception as e:
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
         logger.error(error)
