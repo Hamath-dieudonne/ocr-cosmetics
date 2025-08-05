@@ -115,7 +115,7 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
     return query.capitalize()
 
 def detect_separator(text: str) -> str | None:
-    possible_separators = [',', '.', '\n', '-']
+    possible_separators = [' ,']
     counts = Counter(char for char in text if char in possible_separators)
     logger.debug(f"Separator counts: {counts}")
     if not counts:
@@ -130,7 +130,7 @@ def process_inci_list(raw_text: str) -> str:
     logger.debug(f"Raw text received: {raw_text}")
     
     # Remplacer les séparateurs ';', '*', '+' par ','
-    cleaned_text = re.sub(r'[;*\+\n\r\s]+', ',', raw_text.strip())
+    cleaned_text = re.sub(r'[;*\+\»]+', ' ,', raw_text.strip())
     logger.debug(f"Cleaned text after separator replacement: {cleaned_text}")
     
     # Détecter le séparateur principal
