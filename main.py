@@ -50,14 +50,12 @@ UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
-chemical_db_set = set()
-
-
-
+chemical_db = []
+common_db = []
 
 @app.on_event("startup")
 async def startup_event():
-    global chemical_db_set
+    global chemical_db, common_db
     try:
         env_path = Path('.') / '.env'
         if env_path.exists():
@@ -73,8 +71,9 @@ async def startup_event():
                 f.write(decrypted_data)
             INCI_Catalog = pd.read_pickle("temp.pkl")
             os.remove("temp.pkl")
-            chemical_db_set = set(INCI_Catalog['INCI'].tolist())
-            logger.info(f"Loaded INCI catalog with {len(chemical_db_set)} entries")
+            chemical_db = INCI_Catalog['INCI'].tolist()
+            common_db = chemical_db
+            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
     except Exception as e:
@@ -87,15 +86,19 @@ def validate_image_path(image_path: str) -> bool:
 
 @lru_cache(maxsize=1000)
 def get_top_chemicals(query: str, threshold: int = 85) -> str:
-    query_upper = query.upper().strip()
-    logger.debug(f"Processing query: {query_upper}")
-    query_cleaned = CLEAN_INGREDIENT_RE.sub('', query_upper)
+    query_lower = query.lower().strip()
+    logger.debug(f"Processing query: {query_lower}")
+    chemical_set = set(c.lower() for c in chemical_db)
+    if query_lower in chemical_set:
+        logger.debug(f"Exact match found for {query}")
+        return query.capitalize()
+    query_cleaned = CLEAN_INGREDIENT_RE.sub('', query_lower)
     query_length = len(query_cleaned)
     logger.debug(f"Cleaned query length: {query_length} ('{query_cleaned}')")
-    matches = [(chem, fuzz.WRatio(query_upper, chem.lower())) for chem in chemical_db_set]
+    matches = [(chem, fuzz.WRatio(query_lower, chem.lower())) for chem in common_db]
     matches.sort(key=lambda x: x[1], reverse=True)
     top_3_matches = matches[:3]
-    logger.info(f"Top 3 matches for {query_upper}:")
+    logger.info(f"Top 3 matches for {query_lower}:")
     for chem, score in top_3_matches:
         logger.info(f"  - {chem} (score: {score})")
     best_fuzzy_match = "NF"
@@ -115,7 +118,7 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
     if best_fuzzy_match != "NF":
         logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
         return best_fuzzy_match
-    logger.warning(f"No match found for {query_upper} with threshold {threshold}")
+    logger.warning(f"No match found for {query_lower} with threshold {threshold}")
     return query.capitalize()
 
 def detect_separator(text: str) -> str | None:
@@ -161,13 +164,18 @@ def process_inci_list(raw_text: str) -> str:
         logger.warning("No valid ingredients detected after processing")
         return "Aucun ingrédient détecté"
     
-    
-    results = [get_top_chemicals(ing) if ing.upper() in chemical_db_set else ing for ing in cleaned_ingredients]
+    seen = set()
+    unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
+    if len(unique_ingredients) < 10:
+        results = [get_top_chemicals(ing) for ing in unique_ingredients]
+    else:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda ing: get_top_chemicals(ing), unique_ingredients))
+    unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
+    logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     
-    logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(results)} ingredients")
-    
-    return ', '.join(results) if results else "Aucun ingrédient détecté"
+    return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
 
 @app.head("/")
 async def head_root():
@@ -239,7 +247,7 @@ async def index(request: Request, image: UploadFile = File(None)):
         profiler.disable()
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
         
-        # les résultats du profilage
+        # Sauvegarder les résultats du profilage
         s = io.StringIO()
         ps = pstats.Stats(profiler, stream=s).sort_stats('cumulative')
         ps.print_stats(10)  # Limiter à 10 lignes
