@@ -136,10 +136,8 @@ def process_inci_list(raw_text: str) -> str:
         return ""
     logger.debug(f"Raw text received: {raw_text}")
     
-    # Remplacer les retours à la ligne par des espaces
-    cleaned_text = re.sub(r'\n+', ' ', raw_text.strip())
     # Remplacer les séparateurs ';', '*', '+', '»' par ','
-    cleaned_text = SEPARATOR_RE.sub(',', cleaned_text)
+    cleaned_text = SEPARATOR_RE.sub(',', raw_text.strip())
     logger.debug(f"Cleaned text after separator replacement: {cleaned_text}")
     
     # Détecter le séparateur principal
@@ -148,14 +146,11 @@ def process_inci_list(raw_text: str) -> str:
     
     # Diviser le texte en ingrédients
     ingredients = cleaned_text.split(separator) if separator else [cleaned_text]
-    # Diviser les segments contenant plusieurs mots
-    cleaned_ingredients = []
-    for ingredient in ingredients:
-        sub_ingredients = [sub.strip() for sub in re.split(r'\s+', ingredient) if sub.strip()]
-        for sub in sub_ingredients:
-            cleaned = CLEAN_INGREDIENT_RE.sub('', sub).strip()
-            if cleaned and len(cleaned) > 2 and not cleaned.isdigit():
-                cleaned_ingredients.append(cleaned.capitalize())
+    cleaned_ingredients = [
+        CLEAN_INGREDIENT_RE.sub('', ingredient).strip().capitalize()
+        for ingredient in ingredients
+        if ingredient.strip() and len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
+    ]
     
     if not cleaned_ingredients:
         potential_ingredients = re.findall(r'\b[A-Z][a-zA-Z0-9\s-]*\b', cleaned_text)
@@ -252,10 +247,10 @@ async def index(request: Request, image: UploadFile = File(None)):
         profiler.disable()
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
         
-        # Enregistrer les résultats du profilage dans les logs
+        # les résultats du profilage
         s = io.StringIO()
         ps = pstats.Stats(profiler, stream=s).sort_stats('cumulative')
-        ps.print_stats(10)  # Limiter à 10 lignes pour éviter des logs trop longs
+        ps.print_stats(10)  # Limiter à 10 lignes
         logger.info(f"Profiling results:\n{s.getvalue()}")
 
     except Exception as e:
