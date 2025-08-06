@@ -52,10 +52,10 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 chemical_db = []
 common_db = []
-
+chemical_set = set()
 @app.on_event("startup")
 async def startup_event():
-    global chemical_db, common_db
+    global chemical_db, common_db, chemical_set
     try:
         env_path = Path('.') / '.env'
         if env_path.exists():
@@ -73,6 +73,7 @@ async def startup_event():
             os.remove("temp.pkl")
             chemical_db = INCI_Catalog['INCI'].tolist()
             common_db = chemical_db
+            chemical_set = set(chemical_db)
             logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
@@ -86,19 +87,19 @@ def validate_image_path(image_path: str) -> bool:
 
 @lru_cache(maxsize=1000)
 def get_top_chemicals(query: str, threshold: int = 85) -> str:
-    query_lower = query.lower().strip()
-    logger.debug(f"Processing query: {query_lower}")
-    chemical_set = set(c.lower() for c in chemical_db)
-    if query_lower in chemical_set:
+    query_upper = query.upper().strip()
+    logger.debug(f"Processing query: {query_upper}")
+    
+    if query_upper in chemical_set:
         logger.debug(f"Exact match found for {query}")
         return query.capitalize()
-    query_cleaned = CLEAN_INGREDIENT_RE.sub('', query_lower)
+    query_cleaned = CLEAN_INGREDIENT_RE.sub('', query_upper)
     query_length = len(query_cleaned)
     logger.debug(f"Cleaned query length: {query_length} ('{query_cleaned}')")
-    matches = [(chem, fuzz.WRatio(query_lower, chem.lower())) for chem in common_db]
+    matches = [(chem, fuzz.WRatio(query_upper, chem.lower())) for chem in common_db]
     matches.sort(key=lambda x: x[1], reverse=True)
     top_3_matches = matches[:3]
-    logger.info(f"Top 3 matches for {query_lower}:")
+    logger.info(f"Top 3 matches for {query_upper}:")
     for chem, score in top_3_matches:
         logger.info(f"  - {chem} (score: {score})")
     best_fuzzy_match = "NF"
@@ -118,7 +119,7 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
     if best_fuzzy_match != "NF":
         logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
         return best_fuzzy_match
-    logger.warning(f"No match found for {query_lower} with threshold {threshold}")
+    logger.warning(f"No match found for {query_upper} with threshold {threshold}")
     return query.capitalize()
 
 def detect_separator(text: str) -> str | None:
