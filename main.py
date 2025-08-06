@@ -14,7 +14,6 @@ from PIL import Image, ImageEnhance
 import pytesseract
 import shutil
 from urllib.parse import quote
-from concurrent.futures import ThreadPoolExecutor
 from fuzzywuzzy import fuzz
 from dotenv import load_dotenv
 from pathlib import Path
@@ -22,6 +21,7 @@ from cryptography.fernet import Fernet
 import cProfile
 import pstats
 import io
+import numpy as np
 
 # Configurer le logging
 logging.basicConfig(level=logging.DEBUG)
@@ -53,6 +53,7 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 chemical_db = []
 common_db = []
 chemical_set = set()
+
 @app.on_event("startup")
 async def startup_event():
     global chemical_db, common_db, chemical_set
@@ -67,14 +68,12 @@ async def startup_event():
             with open(encrypted_path, "rb") as f:
                 encrypted_data = f.read()
             decrypted_data = Fernet(os.getenv("FERNET_KEY").encode()).decrypt(encrypted_data)
-            with open("temp.pkl", "wb") as f:
-                f.write(decrypted_data)
-            INCI_Catalog = pd.read_pickle("temp.pkl")
-            os.remove("temp.pkl")
-            chemical_db = INCI_Catalog['INCI'].tolist()
-            common_db = chemical_db
-            chemical_set = set(chemical_db)
-            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
+            with io.BytesIO(decrypted_data) as f:
+                INCI_Catalog = pd.read_pickle(f)
+                chemical_db = INCI_Catalog['INCI'].tolist()
+                common_db = [chem.upper() for chem in chemical_db]  # Pré-calcul en majuscules
+                chemical_set = set(common_db)
+                logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
     except Exception as e:
@@ -86,50 +85,28 @@ def validate_image_path(image_path: str) -> bool:
     return abs_image_path.startswith(abs_upload_folder) and os.path.exists(image_path)
 
 @lru_cache(maxsize=1000)
-def get_top_chemicals(query: str, threshold: int = 85) -> str:
-    query_upper = query.upper().strip()
-    logger.debug(f"Processing query: {query_upper}")
-    
-    if query_upper in chemical_set:
-        logger.debug(f"Exact match found for {query}")
-        return query.capitalize()
-    query_cleaned = CLEAN_INGREDIENT_RE.sub('', query_upper)
-    query_length = len(query_cleaned)
-    logger.debug(f"Cleaned query length: {query_length} ('{query_cleaned}')")
-    matches = [(chem, fuzz.WRatio(query_upper, chem.lower())) for chem in common_db]
-    matches.sort(key=lambda x: x[1], reverse=True)
-    top_3_matches = matches[:3]
-    logger.info(f"Top 3 matches for {query_upper}:")
-    for chem, score in top_3_matches:
-        logger.info(f"  - {chem} (score: {score})")
-    best_fuzzy_match = "NF"
-    best_fuzzy_score = 0
-    best_fuzzy_diff = float('inf')
-    for chem, score in top_3_matches:
-        if score >= threshold:
-            if score > best_fuzzy_score:
-                best_fuzzy_score = score
-                best_fuzzy_match = chem
-                best_fuzzy_diff = abs(len(chem) - query_length)
-            elif score == best_fuzzy_score:
-                current_diff = abs(len(chem) - query_length)
-                if current_diff < best_fuzzy_diff:
-                    best_fuzzy_match = chem
-                    best_fuzzy_diff = current_diff
-    if best_fuzzy_match != "NF":
-        logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
-        return best_fuzzy_match.capitalize()
-    logger.warning(f"No match found for {query_upper} with threshold {threshold}")
-    return query.capitalize()
+def get_top_chemicals_vectorized(queries: tuple) -> list:
+    query_upper = [q.upper().strip() for q in queries]
+    logger.debug(f"Processing queries: {query_upper}")
+    matches = np.array([[fuzz.WRatio(q, chem) for chem in common_db] for q in query_upper])
+    best_matches = np.argmax(matches, axis=1)
+    scores = matches[np.arange(len(query_upper)), best_matches]
+    result = []
+    for i, (q, score, best_idx) in enumerate(zip(query_upper, scores, best_matches)):
+        if score >= 85:
+            match = common_db[best_idx]
+            logger.debug(f"Best fuzzy match for {q}: {match} (score: {score})")
+            result.append(match)
+        else:
+            logger.warning(f"No match found for {q} with threshold 85")
+            result.append(q.capitalize())
+    return result
 
 def detect_separator(text: str) -> str | None:
     possible_separators = [',']
     counts = Counter(char for char in text if char in possible_separators)
     logger.debug(f"Separator counts: {counts}")
-    if not counts:
-        logger.debug("No separator found")
-        return None
-    return max(counts, key=counts.get)
+    return max(counts, key=counts.get) if counts else None
 
 def process_inci_list(raw_text: str) -> str:
     if not raw_text:
@@ -137,18 +114,18 @@ def process_inci_list(raw_text: str) -> str:
         return ""
     logger.debug(f"Raw text received: {raw_text}")
     
-    # Remplacer les séparateurs ';', '*', '+', '»' par ','
+    # Remplacer les séparateurs par ','
     cleaned_text = SEPARATOR_RE.sub(',', raw_text.strip())
     logger.debug(f"Cleaned text after separator replacement: {cleaned_text}")
     
-    # Détecter le séparateur principal
+    # Détecter le séparateur
     separator = detect_separator(cleaned_text)
     logger.debug(f"Detected separator: {separator}")
     
-    # Diviser le texte en ingrédients
+    # Diviser en ingrédients
     ingredients = cleaned_text.split(separator) if separator else [cleaned_text]
     cleaned_ingredients = [
-        CLEAN_INGREDIENT_RE.sub('', ingredient).strip().capitalize()
+        CLEAN_INGREDIENT_RE.sub('', ingredient).strip()
         for ingredient in ingredients
         if ingredient.strip() and len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
     ]
@@ -156,7 +133,7 @@ def process_inci_list(raw_text: str) -> str:
     if not cleaned_ingredients:
         potential_ingredients = re.findall(r'\b[A-Z][a-zA-Z0-9\s-]*\b', cleaned_text)
         cleaned_ingredients = [
-            CLEAN_INGREDIENT_RE.sub('', ingredient).strip().capitalize()
+            CLEAN_INGREDIENT_RE.sub('', ingredient).strip()
             for ingredient in potential_ingredients
             if len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
         ]
@@ -167,12 +144,15 @@ def process_inci_list(raw_text: str) -> str:
     
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
+    if not unique_ingredients:
+        return "Aucun ingrédient détecté"
+    
     start_time = time.time()
-    results = [get_top_chemicals(ing) for ing in unique_ingredients]
-    # unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
+    # Vectorisation des comparaisons floues
+    results = get_top_chemicals_vectorized(tuple(unique_ingredients))
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     
-    return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
+    return ', '.join(results)
 
 @app.head("/")
 async def head_root():
