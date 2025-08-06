@@ -168,11 +168,7 @@ def process_inci_list(raw_text: str) -> str:
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
-    if len(unique_ingredients) < 10:
-        results = [get_top_chemicals(ing) for ing in unique_ingredients]
-    else:
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            results = list(executor.map(lambda ing: get_top_chemicals(ing), unique_ingredients))
+    results = [get_top_chemicals(ing) for ing in unique_ingredients]
     unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     
