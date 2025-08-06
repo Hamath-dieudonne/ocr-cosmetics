@@ -118,7 +118,7 @@ def get_top_chemicals(query: str, threshold: int = 85) -> str:
                     best_fuzzy_diff = current_diff
     if best_fuzzy_match != "NF":
         logger.debug(f"Best fuzzy match for {query}: {best_fuzzy_match} (score: {best_fuzzy_score})")
-        return best_fuzzy_match
+        return best_fuzzy_match.capitalize()
     logger.warning(f"No match found for {query_upper} with threshold {threshold}")
     return query.capitalize()
 
@@ -169,7 +169,7 @@ def process_inci_list(raw_text: str) -> str:
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
     start_time = time.time()
     results = [get_top_chemicals(ing) for ing in unique_ingredients]
-    unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
+    # unique_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
     
     return ', '.join(unique_ingredients) if unique_ingredients else "Aucun ingrédient détecté"
