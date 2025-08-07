@@ -110,7 +110,7 @@ def get_top_chemicals(query, threshold=86, top_n=3):
         scorer=fuzz.token_set_ratio,
         limit=top_n
     )
-
+    logger.debug(f"fallback_results: {fallback_results}")
     # Vérifie s'il y a un match acceptable
     has_good_match = any(score >= threshold for _, score, _ in indexed_results)
 
