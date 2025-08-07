@@ -22,7 +22,8 @@ import cProfile
 import pstats
 import io
 
-from rapidfuzz import fuzz
+from rapidfuzz import process, fuzz
+
 import pytesseract
 
 # Configuration du logging
