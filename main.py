@@ -8,7 +8,7 @@ from urllib.parse import quote
 from collections import Counter, defaultdict
 
 import pandas as pd
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageEnhance
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 from functools import lru_cache
@@ -187,52 +187,6 @@ def process_inci_list(raw_text: str) -> str:
 
 # ... (les autres routes restent inchangées: /, POST /, /cleanup, /delete_image)
 
-def ocr_optimized(image_path, lang="eng+fra", psm=6, max_width=1200, threshold=140):
-    """
-    Effectue un OCR rapide et optimisé sur une image.
-
-    :param image_path: chemin du fichier image
-    :param lang: langues à utiliser (ex: "eng", "eng+fra")
-    :param psm: mode Page Segmentation Mode de Tesseract (6 par défaut)
-    :param max_width: largeur max en pixels avant réduction
-    :param threshold: seuil de binarisation (0-255)
-    :return: texte extrait
-    """
-    start_time = time.time()
-
-    # 1. Ouvrir image
-    img = Image.open(image_path)
-
-    # 2. Réduire si image trop grande
-    if img.width > max_width:
-        ratio = max_width / img.width
-        new_size = (max_width, int(img.height * ratio))
-        img = img.resize(new_size, Image.ANTIALIAS)
-
-    # 3. Niveaux de gris
-    img = img.convert("L")
-
-    # 4. Amélioration contraste
-    img = ImageEnhance.Contrast(img).enhance(2.0)
-
-    # 5. Binarisation (noir & blanc pur)
-    img = img.point(lambda x: 0 if x < threshold else 255, "1")
-
-    # 6. OCR
-    config = f"--psm {psm}"
-    raw_text = pytesseract.image_to_string(img, lang=lang, config=config)
-
-    duration = time.time() - start_time
-    print(f"[OCR] Traitement terminé en {duration:.2f} sec")
-
-    return raw_text
-
-
-# def preprocess_image(image_path):
-#     image = Image.open(image_path)
-#     image = image.convert("L")  # Convertir en niveaux de gris
-#     image = ImageOps.autocontrast(image)  # Améliorer le contraste
-#     return image
 
 @app.head("/")
 async def head_root():
@@ -290,9 +244,10 @@ async def index(request: Request, image: UploadFile = File(None)):
 
     try:
         logger.info("Attempting to open image for OCR")
-        # img = preprocess_image(image_path)
+        img = Image.open(image_path).convert('L')
+        img = ImageEnhance.Contrast(img).enhance(2.0)
         logger.info("Image opened and preprocessed successfully")
-        raw_text = ocr_optimized(image_path, lang="eng+fra", psm=6)
+        raw_text = pytesseract.image_to_string(img, lang="eng+fra", config="--psm 6")
         logger.debug(f"Raw extracted text: {raw_text}")
         
         # Profilage de process_inci_list
