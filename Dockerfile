@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-eng \
     tesseract-ocr-fra \
     libtesseract-dev \
+    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
 # Exposer le port utilisé par FastAPI
