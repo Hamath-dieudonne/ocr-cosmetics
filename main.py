@@ -92,15 +92,12 @@ async def startup_event():
         logger.error(f"Error loading INCI catalog or environment: {str(e)}")
 
 @lru_cache(maxsize=1000)
+@lru_cache(maxsize=1000)
 def get_top_chemicals(query, threshold=86, top_n=3):
-    
-
-    # Nettoyage du query si nécessaire
     cleaned_query = query.strip().upper()
-
+    query_len = len(cleaned_query)
     logger.debug(f"cleaned_query: {cleaned_query}")
 
-    # Recherche par première lettre (index)
     first_letter = cleaned_query[0].upper()
     candidates = chemical_index.get(first_letter, [])
 
@@ -110,22 +107,32 @@ def get_top_chemicals(query, threshold=86, top_n=3):
         scorer=fuzz.token_set_ratio,
         limit=top_n
     )
+
     logger.debug(f"indexed_results: {indexed_results}")
+
     # Vérifie s'il y a un match acceptable
     has_good_match = any(score >= threshold for _, score, _ in indexed_results)
 
-    if has_good_match:
-        return indexed_results  # Résultats de l'index OK
-
-    # Sinon, recherche globale
-    fallback_results = process.extract(
+    results = indexed_results if has_good_match else process.extract(
         cleaned_query,
         chemical_db,
         scorer=fuzz.token_set_ratio,
         limit=top_n
     )
-    logger.debug(f"fallback_results: {fallback_results}")
-    return fallback_results
+
+    if not has_good_match:
+        logger.debug(f"fallback_results: {results}")
+
+    # Trier les résultats ex-aequo par distance de longueur
+    if results:
+        best_score = results[0][1]
+        filtered = [r for r in results if r[1] == best_score]
+        sorted_filtered = sorted(filtered, key=lambda x: abs(len(x[0]) - query_len))
+        best_match = sorted_filtered[0]
+        return [best_match]
+    
+    return ["NF"]
+
 
 
 def detect_separator(text: str) -> str | None:
