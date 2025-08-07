@@ -8,7 +8,7 @@ from urllib.parse import quote
 from collections import Counter, defaultdict
 
 import pandas as pd
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageOps, ImageEnhance
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 from functools import lru_cache
@@ -187,6 +187,11 @@ def process_inci_list(raw_text: str) -> str:
 
 # ... (les autres routes restent inchangées: /, POST /, /cleanup, /delete_image)
 
+def preprocess_image(image_path):
+    image = Image.open(image_path)
+    image = image.convert("L")  # Convertir en niveaux de gris
+    image = ImageOps.autocontrast(image)  # Améliorer le contraste
+    return image
 
 @app.head("/")
 async def head_root():
@@ -244,10 +249,9 @@ async def index(request: Request, image: UploadFile = File(None)):
 
     try:
         logger.info("Attempting to open image for OCR")
-        img = Image.open(image_path).convert('L')
-        img = ImageEnhance.Contrast(img).enhance(2.0)
+        img = preprocess_image(image_path)
         logger.info("Image opened and preprocessed successfully")
-        raw_text = pytesseract.image_to_string(img, lang="eng+fra")
+        raw_text = pytesseract.image_to_string(img, lang="eng+fra", config="--psm 6")
         logger.debug(f"Raw extracted text: {raw_text}")
         
         # Profilage de process_inci_list
