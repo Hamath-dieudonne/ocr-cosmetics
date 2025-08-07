@@ -92,7 +92,7 @@ async def startup_event():
 
 @lru_cache(maxsize=1000)
 def get_top_chemicals(query, threshold=86, top_n=3):
-    from rapidfuzz import fuzz, process
+    
 
     # Nettoyage du query si nécessaire
     cleaned_query = query.strip().upper()
@@ -172,7 +172,7 @@ def process_inci_list(raw_text: str) -> str:
     results = [get_top_chemicals(ing) for ing in unique_ingredients]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
 
-    final_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
+    final_ingredients = [match[0][0].title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     return ', '.join(final_ingredients) if final_ingredients else "Aucun ingrédient détecté"
 
 # ... (les autres routes restent inchangées: /, POST /, /cleanup, /delete_image)
