@@ -98,6 +98,8 @@ def get_top_chemicals(query, threshold=86, top_n=3):
     # Nettoyage du query si nécessaire
     cleaned_query = query.strip().upper()
 
+    logger.debug(f"cleaned_query: {cleaned_query}")
+
     # Recherche par première lettre (index)
     first_letter = cleaned_query[0].upper()
     candidates = chemical_index.get(first_letter, [])
@@ -122,7 +124,7 @@ def get_top_chemicals(query, threshold=86, top_n=3):
         scorer=fuzz.token_set_ratio,
         limit=top_n
     )
-
+    logger.debug(f"fallback_results: {fallback_results}")
     return fallback_results
 
 
