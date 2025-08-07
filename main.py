@@ -1,3 +1,4 @@
+from paddleocr import PaddleOCR
 import os
 import re
 import time
@@ -24,8 +25,6 @@ import io
 
 from rapidfuzz import process, fuzz
 
-import pytesseract
-
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -46,7 +45,8 @@ chemical_db = []
 common_db = []
 chemical_index = defaultdict(list)
 
-
+# Initialisation PaddleOCR (en anglais et français)
+ocr_model = PaddleOCR(lang='en')  # 'en' prend aussi bien anglais que caractères basiques FR
 
 @app.get("/static/{file_path:path}")
 async def serve_static(file_path: str):
@@ -65,8 +65,6 @@ async def startup_event():
         env_path = Path('.') / '.env'
         if env_path.exists():
             load_dotenv(dotenv_path=env_path)
-        TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
-        pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
         encrypted_path = 'static/inci_only.pkl.enc'
         if os.path.exists(encrypted_path):
@@ -92,7 +90,6 @@ async def startup_event():
         logger.error(f"Error loading INCI catalog or environment: {str(e)}")
 
 @lru_cache(maxsize=1000)
-@lru_cache(maxsize=1000)
 def get_top_chemicals(query, threshold=86, top_n=3):
     cleaned_query = query.strip().upper()
     query_len = len(cleaned_query)
@@ -110,7 +107,6 @@ def get_top_chemicals(query, threshold=86, top_n=3):
 
     logger.debug(f"indexed_results: {indexed_results}")
 
-    # Vérifie s'il y a un match acceptable
     has_good_match = any(score >= threshold for _, score, _ in indexed_results)
 
     results = indexed_results if has_good_match else process.extract(
@@ -123,7 +119,6 @@ def get_top_chemicals(query, threshold=86, top_n=3):
     if not has_good_match:
         logger.debug(f"fallback_results: {results}")
 
-    # Trier les résultats ex-aequo par distance de longueur
     if results:
         best_score = results[0][1]
         filtered = [r for r in results if r[1] == best_score]
@@ -132,8 +127,6 @@ def get_top_chemicals(query, threshold=86, top_n=3):
         return [best_match]
     
     return ["NF"]
-
-
 
 def detect_separator(text: str) -> str | None:
     possible_separators = [',']
@@ -184,9 +177,6 @@ def process_inci_list(raw_text: str) -> str:
 
     final_ingredients = [match[0][0].title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     return ', '.join(final_ingredients) if final_ingredients else "Aucun ingrédient détecté"
-
-# ... (les autres routes restent inchangées: /, POST /, /cleanup, /delete_image)
-
 
 @app.head("/")
 async def head_root():
@@ -244,13 +234,17 @@ async def index(request: Request, image: UploadFile = File(None)):
 
     try:
         logger.info("Attempting to open image for OCR")
-        img = Image.open(image_path).convert('L')
+        img = Image.open(image_path).convert('RGB')
         img = ImageEnhance.Contrast(img).enhance(2.0)
+
         logger.info("Image opened and preprocessed successfully")
-        raw_text = pytesseract.image_to_string(img, lang="eng+fra", config="--psm 6")
+
+        # Utilisation PaddleOCR
+        ocr_result = ocr_model.ocr(image_path, cls=True)
+        raw_text = " ".join([line[1][0] for result in ocr_result for line in result])
+
         logger.debug(f"Raw extracted text: {raw_text}")
         
-        # Profilage de process_inci_list
         profiler = cProfile.Profile()
         profiler.enable()
         start_time = time.time()
@@ -258,10 +252,9 @@ async def index(request: Request, image: UploadFile = File(None)):
         profiler.disable()
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
         
-        # Sauvegarder les résultats du profilage
         s = io.StringIO()
         ps = pstats.Stats(profiler, stream=s).sort_stats('cumulative')
-        ps.print_stats(10)  # Limiter à 10 lignes
+        ps.print_stats(10)
         logger.info(f"Profiling results:\n{s.getvalue()}")
 
     except Exception as e:
@@ -288,7 +281,7 @@ async def cleanup():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         if os.path.isfile(file_path):
             file_age = current_time - os.path.getmtime(file_path)
-            if file_age > 3600:  # 1 heure
+            if file_age > 3600:
                 try:
                     os.remove(file_path)
                     logger.info(f"Deleted old file: {file_path}")
@@ -297,9 +290,6 @@ async def cleanup():
     return {"message": "Cleanup completed"}
 
 def validate_image_path(image_path: str, base_dir: str = "static/uploads") -> bool:
-    """
-    Vérifie que le chemin reste bien dans le dossier autorisé, pour éviter toute tentative d'accès en dehors.
-    """
     full_path = os.path.abspath(image_path)
     base_path = os.path.abspath(base_dir)
     return full_path.startswith(base_path)
