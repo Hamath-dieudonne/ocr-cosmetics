@@ -18,6 +18,9 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+import cProfile
+import pstats
+import io
 
 from rapidfuzz import fuzz
 import pytesseract
