@@ -45,6 +45,8 @@ chemical_db = []
 common_db = []
 chemical_index = defaultdict(list)
 
+
+
 @app.get("/static/{file_path:path}")
 async def serve_static(file_path: str):
     file_path = os.path.normpath(file_path)
@@ -80,7 +82,7 @@ async def startup_event():
 
             for chem in chemical_db:
                 if chem:
-                    chemical_index[chem[0].lower()].append(chem)
+                    chemical_index[chem[0]].append(chem)
 
             logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
         else:
@@ -89,43 +91,39 @@ async def startup_event():
         logger.error(f"Error loading INCI catalog or environment: {str(e)}")
 
 @lru_cache(maxsize=1000)
-def get_top_chemicals(query: str, threshold: int = 85) -> str:
-    query_lower = query.lower().strip()
-    query_cleaned = CLEAN_INGREDIENT_RE.sub('', query_lower)
-    query_length = len(query_cleaned)
-    logger.debug(f"Processing query: {query_lower} | Cleaned: {query_cleaned}")
+def get_top_chemicals(query, threshold=86, top_n=3):
+    from rapidfuzz import fuzz, process
 
-    for chem in chemical_db:
-        if query_cleaned == chem.lower():
-            logger.debug(f"Exact match found for {query}")
-            return chem.title()
+    # Nettoyage du query si nécessaire
+    cleaned_query = query.strip().upper()
 
-    subset = chemical_index.get(query_cleaned[0], common_db)
-    matches = [(chem, fuzz.token_set_ratio(query_cleaned, chem.lower())) for chem in subset]
-    matches.sort(key=lambda x: x[1], reverse=True)
-    top_3_matches = matches[:3]
+    # Recherche par première lettre (index)
+    first_letter = cleaned_query[0].upper()
+    candidates = chemical_index.get(first_letter, [])
 
-    logger.info(f"Top 3 matches for {query_lower}:")
-    for chem, score in top_3_matches:
-        logger.info(f"  - {chem} (score: {score})")
+    indexed_results = process.extract(
+        cleaned_query,
+        candidates,
+        scorer=fuzz.token_set_ratio,
+        limit=top_n
+    )
 
-    best_match = "NF"
-    best_score = 0
-    best_diff = float('inf')
-    for chem, score in top_3_matches:
-        if score >= threshold:
-            diff = abs(len(chem) - query_length)
-            if score > best_score or (score == best_score and diff < best_diff):
-                best_match = chem
-                best_score = score
-                best_diff = diff
+    # Vérifie s'il y a un match acceptable
+    has_good_match = any(score >= threshold for _, score, _ in indexed_results)
 
-    if best_match != "NF":
-        logger.debug(f"Best fuzzy match for {query}: {best_match} (score: {best_score})")
-        return best_match.title()
+    if has_good_match:
+        return indexed_results  # Résultats de l'index OK
 
-    logger.warning(f"No match found for {query_lower}")
-    return query.capitalize()
+    # Sinon, recherche globale
+    fallback_results = process.extract(
+        cleaned_query,
+        chemical_db,
+        scorer=fuzz.token_set_ratio,
+        limit=top_n
+    )
+
+    return fallback_results
+
 
 def detect_separator(text: str) -> str | None:
     possible_separators = [',']
@@ -168,7 +166,7 @@ def process_inci_list(raw_text: str) -> str:
         return "Aucun ingrédient détecté"
 
     seen = set()
-    unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
+    unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.upper() in seen or seen.add(ing.upper()))]
 
     start_time = time.time()
     results = [get_top_chemicals(ing) for ing in unique_ingredients]
@@ -287,6 +285,14 @@ async def cleanup():
                 except Exception as e:
                     logger.error(f"Error deleting old file {file_path}: {str(e)}")
     return {"message": "Cleanup completed"}
+
+def validate_image_path(image_path: str, base_dir: str = "static/uploads") -> bool:
+    """
+    Vérifie que le chemin reste bien dans le dossier autorisé, pour éviter toute tentative d'accès en dehors.
+    """
+    full_path = os.path.abspath(image_path)
+    base_path = os.path.abspath(base_dir)
+    return full_path.startswith(base_path)
 
 @app.post("/delete_image")
 async def delete_image(request: Request):
