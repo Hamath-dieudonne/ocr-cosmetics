@@ -1,29 +1,28 @@
 import os
 import re
-from collections import Counter
-import pandas as pd
-from functools import lru_cache
 import time
+import shutil
 import logging
+from pathlib import Path
+from urllib.parse import quote
+from collections import Counter, defaultdict
+
+import pandas as pd
+from PIL import Image, ImageEnhance
+from dotenv import load_dotenv
+from cryptography.fernet import Fernet
+from functools import lru_cache
+
 from fastapi import FastAPI, File, UploadFile, Request, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from PIL import Image, ImageEnhance
-import pytesseract
-import shutil
-from urllib.parse import quote
-from fuzzywuzzy import fuzz
-from dotenv import load_dotenv
-from pathlib import Path
-from cryptography.fernet import Fernet
-import cProfile
-import pstats
-import io
-import numpy as np
 
-# Configurer le logging
+from rapidfuzz import fuzz
+import pytesseract
+
+# Configuration du logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -32,9 +31,16 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Précompiler les regex
-SEPARATOR_RE = re.compile(r'[;*\+\»]+')
+UPLOAD_FOLDER = "static/uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+SEPARATOR_RE = re.compile(r'[;*+\»]+')
 CLEAN_INGREDIENT_RE = re.compile(r'[^a-zA-Z0-9\s-]')
+
+chemical_db = []
+common_db = []
+chemical_index = defaultdict(list)
 
 @app.get("/static/{file_path:path}")
 async def serve_static(file_path: str):
@@ -46,113 +52,130 @@ async def serve_static(file_path: str):
         return JSONResponse(content={"error": "Access denied"}, status_code=404)
     return FileResponse(full_path)
 
-UPLOAD_FOLDER = "static/uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
-
-chemical_db = []
-common_db = []
-chemical_set = set()
-
 @app.on_event("startup")
 async def startup_event():
-    global chemical_db, common_db, chemical_set
+    global chemical_db, common_db, chemical_index
     try:
         env_path = Path('.') / '.env'
         if env_path.exists():
             load_dotenv(dotenv_path=env_path)
         TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
+
         encrypted_path = 'static/inci_only.pkl.enc'
         if os.path.exists(encrypted_path):
             with open(encrypted_path, "rb") as f:
                 encrypted_data = f.read()
             decrypted_data = Fernet(os.getenv("FERNET_KEY").encode()).decrypt(encrypted_data)
-            with io.BytesIO(decrypted_data) as f:
-                INCI_Catalog = pd.read_pickle(f)
-                chemical_db = INCI_Catalog['INCI'].tolist()
-                common_db = [chem.upper() for chem in chemical_db]  # Pré-calcul en majuscules
-                chemical_set = set(common_db)
-                logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
+            with open("temp.pkl", "wb") as f:
+                f.write(decrypted_data)
+            INCI_Catalog = pd.read_pickle("temp.pkl")
+            os.remove("temp.pkl")
+
+            chemical_db = INCI_Catalog['INCI'].tolist()
+            common_db = chemical_db
+
+            for chem in chemical_db:
+                if chem:
+                    chemical_index[chem[0].lower()].append(chem)
+
+            logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
     except Exception as e:
         logger.error(f"Error loading INCI catalog or environment: {str(e)}")
 
-def validate_image_path(image_path: str) -> bool:
-    abs_image_path = os.path.abspath(image_path)
-    abs_upload_folder = os.path.abspath(UPLOAD_FOLDER)
-    return abs_image_path.startswith(abs_upload_folder) and os.path.exists(image_path)
-
 @lru_cache(maxsize=1000)
-def get_top_chemicals_vectorized(queries: tuple) -> list:
-    query_upper = [q.upper().strip() for q in queries]
-    logger.debug(f"Processing queries: {query_upper}")
-    matches = np.array([[fuzz.WRatio(q, chem) for chem in common_db] for q in query_upper])
-    best_matches = np.argmax(matches, axis=1)
-    scores = matches[np.arange(len(query_upper)), best_matches]
-    result = []
-    for i, (q, score, best_idx) in enumerate(zip(query_upper, scores, best_matches)):
-        if score >= 85:
-            match = common_db[best_idx]
-            logger.debug(f"Best fuzzy match for {q}: {match} (score: {score})")
-            result.append(match)
-        else:
-            logger.warning(f"No match found for {q} with threshold 85")
-            result.append(q.capitalize())
-    return result
+def get_top_chemicals(query: str, threshold: int = 85) -> str:
+    query_lower = query.lower().strip()
+    query_cleaned = CLEAN_INGREDIENT_RE.sub('', query_lower)
+    query_length = len(query_cleaned)
+    logger.debug(f"Processing query: {query_lower} | Cleaned: {query_cleaned}")
+
+    for chem in chemical_db:
+        if query_cleaned == chem.lower():
+            logger.debug(f"Exact match found for {query}")
+            return chem.title()
+
+    subset = chemical_index.get(query_cleaned[0], common_db)
+    matches = [(chem, fuzz.token_set_ratio(query_cleaned, chem.lower())) for chem in subset]
+    matches.sort(key=lambda x: x[1], reverse=True)
+    top_3_matches = matches[:3]
+
+    logger.info(f"Top 3 matches for {query_lower}:")
+    for chem, score in top_3_matches:
+        logger.info(f"  - {chem} (score: {score})")
+
+    best_match = "NF"
+    best_score = 0
+    best_diff = float('inf')
+    for chem, score in top_3_matches:
+        if score >= threshold:
+            diff = abs(len(chem) - query_length)
+            if score > best_score or (score == best_score and diff < best_diff):
+                best_match = chem
+                best_score = score
+                best_diff = diff
+
+    if best_match != "NF":
+        logger.debug(f"Best fuzzy match for {query}: {best_match} (score: {best_score})")
+        return best_match.title()
+
+    logger.warning(f"No match found for {query_lower}")
+    return query.capitalize()
 
 def detect_separator(text: str) -> str | None:
     possible_separators = [',']
     counts = Counter(char for char in text if char in possible_separators)
     logger.debug(f"Separator counts: {counts}")
-    return max(counts, key=counts.get) if counts else None
+    if not counts:
+        return None
+    return max(counts, key=counts.get)
 
 def process_inci_list(raw_text: str) -> str:
     if not raw_text:
         logger.warning("No raw text provided")
         return ""
+
     logger.debug(f"Raw text received: {raw_text}")
-    
-    # Remplacer les séparateurs par ','
+    raw_text = re.sub(r'\bIngredients\b[-:\s]*', '', raw_text, flags=re.IGNORECASE)
     cleaned_text = SEPARATOR_RE.sub(',', raw_text.strip())
     logger.debug(f"Cleaned text after separator replacement: {cleaned_text}")
-    
-    # Détecter le séparateur
+
     separator = detect_separator(cleaned_text)
     logger.debug(f"Detected separator: {separator}")
-    
-    # Diviser en ingrédients
     ingredients = cleaned_text.split(separator) if separator else [cleaned_text]
+
     cleaned_ingredients = [
-        CLEAN_INGREDIENT_RE.sub('', ingredient).strip()
-        for ingredient in ingredients
-        if ingredient.strip() and len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
+        CLEAN_INGREDIENT_RE.sub('', ing).strip().capitalize()
+        for ing in ingredients
+        if ing.strip() and len(ing.strip()) > 2 and not ing.strip().isdigit()
     ]
-    
+
     if not cleaned_ingredients:
         potential_ingredients = re.findall(r'\b[A-Z][a-zA-Z0-9\s-]*\b', cleaned_text)
         cleaned_ingredients = [
-            CLEAN_INGREDIENT_RE.sub('', ingredient).strip()
-            for ingredient in potential_ingredients
-            if len(ingredient.strip()) > 2 and not ingredient.strip().isdigit()
+            CLEAN_INGREDIENT_RE.sub('', ing).strip().capitalize()
+            for ing in potential_ingredients
+            if len(ing.strip()) > 2 and not ing.strip().isdigit()
         ]
-    
+
     if not cleaned_ingredients:
         logger.warning("No valid ingredients detected after processing")
         return "Aucun ingrédient détecté"
-    
+
     seen = set()
     unique_ingredients = [ing for ing in cleaned_ingredients if not (ing.lower() in seen or seen.add(ing.lower()))]
-    if not unique_ingredients:
-        return "Aucun ingrédient détecté"
-    
+
     start_time = time.time()
-    # Vectorisation des comparaisons floues
-    results = get_top_chemicals_vectorized(tuple(unique_ingredients))
+    results = [get_top_chemicals(ing) for ing in unique_ingredients]
     logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds with {len(unique_ingredients)} ingredients")
-    
-    return ', '.join(results)
+
+    final_ingredients = [match.title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
+    return ', '.join(final_ingredients) if final_ingredients else "Aucun ingrédient détecté"
+
+# ... (les autres routes restent inchangées: /, POST /, /cleanup, /delete_image)
+
 
 @app.head("/")
 async def head_root():
