@@ -94,7 +94,7 @@ async def startup_event():
 
 @lru_cache(maxsize=1000)
 
-def get_top_chemicals_token_set_then_sort(query, threshold=86, top_n=3):
+def get_top_chemicals(query, threshold=86, top_n=3):
     cleaned_query = query.strip().upper()
     first_letter = cleaned_query[0].upper()
     candidates = chemical_index.get(first_letter, chemical_db)
