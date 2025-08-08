@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 from collections import Counter, defaultdict
 import easyocr
+import numpy as np
 
 import pandas as pd
 from PIL import Image, ImageEnhance
@@ -256,7 +257,6 @@ async def index(request: Request, image: UploadFile = File(None)):
         raw_text = " ".join(results)
         logger.debug(f"Raw extracted text: {raw_text}")
 
-        
         # Profilage de process_inci_list
         profiler = cProfile.Profile()
         profiler.enable()
