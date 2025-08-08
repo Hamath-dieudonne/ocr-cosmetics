@@ -26,7 +26,7 @@ import io
 
 from rapidfuzz import process, fuzz
 
-import pytesseract
+# import pytesseract
 
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG)
