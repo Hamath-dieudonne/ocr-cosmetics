@@ -104,7 +104,7 @@ def get_top_chemicals(query, threshold=86, top_n=3):
     indexed_results = process.extract(
         cleaned_query,
         candidates,
-        scorer=fuzz.token_set_ratio,
+        scorer=fuzz.token_sort_ratio ,
         limit=top_n
     )
 
@@ -116,7 +116,7 @@ def get_top_chemicals(query, threshold=86, top_n=3):
     results = indexed_results if has_good_match else process.extract(
         cleaned_query,
         chemical_db,
-        scorer=fuzz.token_set_ratio,
+        scorer=fuzz.token_sort_ratio ,
         limit=top_n
     )
 
