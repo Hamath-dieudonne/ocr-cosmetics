@@ -6,8 +6,6 @@ import logging
 from pathlib import Path
 from urllib.parse import quote
 from collections import Counter, defaultdict
-import easyocr
-import numpy as np
 
 import pandas as pd
 from PIL import Image, ImageEnhance
@@ -26,7 +24,7 @@ import io
 
 from rapidfuzz import process, fuzz
 
-# import pytesseract
+import pytesseract
 
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG)
@@ -62,14 +60,14 @@ async def serve_static(file_path: str):
 
 @app.on_event("startup")
 async def startup_event():
-    global chemical_db, common_db, chemical_index, ocr_reader
+    global chemical_db, common_db, chemical_index
     try:
-        # Charger .env et INCI comme avant
         env_path = Path('.') / '.env'
         if env_path.exists():
             load_dotenv(dotenv_path=env_path)
+        TESSERACT_CMD = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
+        pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
-        # Charger ton catalogue INCI
         encrypted_path = 'static/inci_only.pkl.enc'
         if os.path.exists(encrypted_path):
             with open(encrypted_path, "rb") as f:
@@ -90,14 +88,8 @@ async def startup_event():
             logger.info(f"Loaded INCI catalog with {len(chemical_db)} entries")
         else:
             raise FileNotFoundError("Encrypted .pkl file not found")
-
-        # ✅ Initialiser EasyOCR (anglais + français)
-        ocr_reader = easyocr.Reader(['en', 'fr'], gpu=False)
-        logger.info("EasyOCR initialized successfully")
-
     except Exception as e:
-        logger.error(f"Error during startup: {str(e)}")
-
+        logger.error(f"Error loading INCI catalog or environment: {str(e)}")
 
 @lru_cache(maxsize=1000)
 @lru_cache(maxsize=1000)
@@ -251,12 +243,13 @@ async def index(request: Request, image: UploadFile = File(None)):
         return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true", status_code=303)
 
     try:
-        logger.info("Using EasyOCR for text extraction")
-        reader = easyocr.Reader(['en', 'fr'], gpu=False)  # GPU=False pour Render
-        results = reader.readtext(image_path, detail=0)   # detail=0 => juste le texte
-        raw_text = " ".join(results)
+        logger.info("Attempting to open image for OCR")
+        img = Image.open(image_path).convert('L')
+        img = ImageEnhance.Contrast(img).enhance(2.0)
+        logger.info("Image opened and preprocessed successfully")
+        raw_text = pytesseract.image_to_string(img, lang="eng+fra", config="--psm 6")
         logger.debug(f"Raw extracted text: {raw_text}")
-
+        
         # Profilage de process_inci_list
         profiler = cProfile.Profile()
         profiler.enable()
