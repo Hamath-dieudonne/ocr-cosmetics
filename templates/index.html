@@ -75,38 +75,6 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        /* Modal styles */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            justify-content: center;
-            align-items: center;
-        }
-        .modal-content {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            width: 90%;
-            max-width: 640px;
-            position: relative;
-        }
-        .modal-close {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            font-size: 24px;
-            cursor: pointer;
-        }
-        .cropper-container {
-            max-height: 400px;
-            width: 100%;
-        }
         @media (max-width: 640px) {
             .button-group {
                 flex-wrap: wrap;
@@ -115,6 +83,59 @@
                 flex: 1 1 calc(50% - 0.75rem);
                 max-width: calc(50% - 0.75rem);
             }
+        }
+        /* Styles pour le modal de recadrage */
+        .crop-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .crop-modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 90%;
+            max-height: 90%;
+            overflow: auto;
+            position: relative;
+        }
+        .crop-image-container {
+            max-width: 100%;
+            max-height: 60vh;
+            margin-bottom: 20px;
+        }
+        .crop-image-container img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .crop-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        .crop-controls button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #9642ea;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .crop-controls button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .crop-controls button.active {
+            background: #141118;
         }
     </style>
 </head>
@@ -217,32 +238,22 @@
                         </p>
                         {% endif %}
                     </form>
+                    <div id="cropModal" class="crop-modal">
+                        <div class="crop-modal-content">
+                            <div class="crop-image-container">
+                                <img id="cropImage" src="" alt="Image à recadrer" />
+                            </div>
+                            <div class="crop-controls">
+                                <button id="cropTop" type="button">Top</button>
+                                <button id="cropBottom" type="button">Bottom</button>
+                                <button id="cropLeft" type="button">Left</button>
+                                <button id="cropRight" type="button">Right</button>
+                                <button id="confirmCrop" type="button">Confirm Crop</button>
+                                <button id="cancelCrop" type="button">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-    </div>
-    <!-- Modal for camera capture and cropping -->
-    <div id="cameraModal" class="modal">
-        <div class="modal-content">
-            <span class="modal-close">&times;</span>
-            <video id="cameraStream" autoplay style="width: 100%; max-height: 400px;"></video>
-            <canvas id="captureCanvas" style="display: none;"></canvas>
-            <div id="cropContainer" style="display: none;">
-                <img id="cropImage" style="width: 100%;" />
-            </div>
-            <div class="flex justify-center gap-3 mt-4">
-                <button
-                    id="captureButton"
-                    class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]"
-                >
-                    Capture
-                </button>
-                <button
-                    id="cropButton"
-                    class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#f2f0f4] text-[#141118] text-sm font-bold leading-normal tracking-[0.015em] hidden"
-                >
-                    Crop & Save
-                </button>
             </div>
         </div>
     </div>
@@ -260,16 +271,8 @@
         const dropText = document.getElementById('dropText');
         const loader = document.getElementById('loader');
         const extractButton = document.getElementById('extractButton');
-        const cameraModal = document.getElementById('cameraModal');
-        const cameraStream = document.getElementById('cameraStream');
-        const captureCanvas = document.getElementById('captureCanvas');
-        const cropContainer = document.getElementById('cropContainer');
-        const cropImage = document.getElementById('cropImage');
-        const captureButton = document.getElementById('captureButton');
-        const cropButton = document.getElementById('cropButton');
-        const modalClose = document.querySelector('.modal-close');
         let cropper = null;
-        let stream = null;
+        let currentCropSide = null;
 
         if (!dropText) console.error('Erreur : #dropText non trouvé dans le DOM');
         else console.log('dropText trouvé dans le DOM');
@@ -308,6 +311,82 @@
                     previewContainer.classList.remove('hidden');
                     console.log('Loader masqué, dropText masqué, previewContainer affiché');
                 }
+            }
+        }
+
+        function initializeCropper(image, side = null) {
+            if (cropper) {
+                cropper.destroy();
+            }
+            cropper = new Cropper(image, {
+                aspectRatio: NaN,
+                viewMode: 1,
+                autoCropArea: 0.8,
+                movable: false,
+                zoomable: false,
+                scalable: false,
+                rotatable: false,
+                cropBoxResizable: true,
+                ready() {
+                    if (side) {
+                        restrictCropSide(side);
+                    }
+                },
+            });
+        }
+
+        function restrictCropSide(side) {
+            if (!cropper) return;
+            const cropBoxData = cropper.getCropBoxData();
+            cropper.setCropBoxData({
+                left: side === 'left' || side === 'right' ? cropBoxData.left : cropBoxData.left,
+                top: side === 'top' || side === 'bottom' ? cropBoxData.top : cropBoxData.top,
+                width: side === 'left' || side === 'right' ? cropBoxData.width : cropBoxData.width,
+                height: side === 'top' || side === 'bottom' ? cropBoxData.height : cropBoxData.height,
+            });
+            cropper.options.dragMode = 'none';
+            cropper.options.cropBoxResizable = true;
+            const cropBox = cropper.cropBox;
+            cropBox.querySelectorAll('.cropper-line, .cropper-point').forEach((el) => {
+                el.style.display = 'none';
+            });
+            if (side === 'top') {
+                cropBox.querySelector('.cropper-line.line-n').style.display = 'block';
+                cropBox.querySelector('.cropper-point.point-n').style.display = 'block';
+            } else if (side === 'bottom') {
+                cropBox.querySelector('.cropper-line.line-s').style.display = 'block';
+                cropBox.querySelector('.cropper-point.point-s').style.display = 'block';
+            } else if (side === 'left') {
+                cropBox.querySelector('.cropper-line.line-w').style.display = 'block';
+                cropBox.querySelector('.cropper-point.point-w').style.display = 'block';
+            } else if (side === 'right') {
+                cropBox.querySelector('.cropper-line.line-e').style.display = 'block';
+                cropBox.querySelector('.cropper-point.point-e').style.display = 'block';
+            }
+        }
+
+        function showCropModal(imageSrc) {
+            const cropModal = document.getElementById('cropModal');
+            const cropImage = document.getElementById('cropImage');
+            cropImage.src = imageSrc;
+            cropModal.style.display = 'flex';
+            initializeCropper(cropImage);
+            updateCropButtons();
+        }
+
+        function updateCropButtons() {
+            const buttons = {
+                top: document.getElementById('cropTop'),
+                bottom: document.getElementById('cropBottom'),
+                left: document.getElementById('cropLeft'),
+                right: document.getElementById('cropRight'),
+            };
+            Object.values(buttons).forEach((btn) => {
+                btn.classList.remove('active');
+                btn.disabled = false;
+            });
+            if (currentCropSide && buttons[currentCropSide]) {
+                buttons[currentCropSide].classList.add('active');
             }
         }
 
@@ -394,19 +473,25 @@
         takePhotoButton.addEventListener('click', async () => {
             try {
                 showLoader();
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                cameraStream.srcObject = stream;
-                cameraModal.style.display = 'flex';
-                captureButton.classList.remove('hidden');
-                cropButton.classList.add('hidden');
-                cropContainer.style.display = 'none';
-                cameraStream.style.display = 'block';
-                if (cropper) {
-                    cropper.destroy();
-                    cropper = null;
-                }
-                hideLoader();
-                console.log('Camera opened');
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                video.play();
+
+                video.addEventListener('loadedmetadata', () => {
+                    setTimeout(() => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 640;
+                        canvas.height = 480;
+                        const context = canvas.getContext('2d');
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const imageSrc = canvas.toDataURL('image/jpeg');
+                        stream.getTracks().forEach(track => track.stop());
+                        hideLoader();
+                        showCropModal(imageSrc);
+                        console.log('Photo captured, showing crop modal');
+                    }, 100);
+                });
             } catch (err) {
                 console.error('Error accessing camera:', err);
                 hideLoader();
@@ -414,67 +499,54 @@
             }
         });
 
-        modalClose.addEventListener('click', () => {
-            cameraModal.style.display = 'none';
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            if (cropper) {
-                cropper.destroy();
-                cropper = null;
-            }
-            cameraStream.style.display = 'none';
-            cropContainer.style.display = 'none';
-            console.log('Camera modal closed');
+        document.getElementById('cropTop').addEventListener('click', () => {
+            currentCropSide = 'top';
+            restrictCropSide('top');
+            updateCropButtons();
+        });
+        document.getElementById('cropBottom').addEventListener('click', () => {
+            currentCropSide = 'bottom';
+            restrictCropSide('bottom');
+            updateCropButtons();
+        });
+        document.getElementById('cropLeft').addEventListener('click', () => {
+            currentCropSide = 'left';
+            restrictCropSide('left');
+            updateCropButtons();
+        });
+        document.getElementById('cropRight').addEventListener('click', () => {
+            currentCropSide = 'right';
+            restrictCropSide('right');
+            updateCropButtons();
         });
 
-        captureButton.addEventListener('click', () => {
-            captureCanvas.width = cameraStream.videoWidth;
-            captureCanvas.height = cameraStream.videoHeight;
-            const context = captureCanvas.getContext('2d');
-            context.drawImage(cameraStream, 0, 0, captureCanvas.width, captureCanvas.height);
-            cropImage.src = captureCanvas.toDataURL('image/jpeg');
-            cameraStream.style.display = 'none';
-            cropContainer.style.display = 'block';
-            captureButton.classList.add('hidden');
-            cropButton.classList.remove('hidden');
-            cropper = new Cropper(cropImage, {
-                aspectRatio: NaN,
-                viewMode: 1,
-                autoCropArea: 0.8,
-                movable: true,
-                zoomable: true,
-                scalable: true,
-                cropBoxResizable: true,
-            });
-            console.log('Image captured, cropper initialized');
-        });
-
-        cropButton.addEventListener('click', () => {
+        document.getElementById('confirmCrop').addEventListener('click', () => {
             if (cropper) {
-                const croppedCanvas = cropper.getCroppedCanvas();
-                if (croppedCanvas.width < 200 || croppedCanvas.height < 200) {
-                    showFeedback('L\'image rognée est trop petite. Veuillez sélectionner une zone plus grande.', true);
-                    return;
-                }
-                croppedCanvas.toBlob((blob) => {
+                cropper.getCroppedCanvas().toBlob((blob) => {
                     const file = new File([blob], 'cropped_photo.jpg', { type: 'image/jpeg' });
                     const dataTransfer = new DataTransfer();
                     dataTransfer.items.add(file);
                     fileInput.files = dataTransfer.files;
-                    console.log('Cropped image added to fileInput:', file.name, file.size, file.type);
                     previewImage(file);
-                    cameraModal.style.display = 'none';
-                    if (stream) {
-                        stream.getTracks().forEach(track => track.stop());
-                        stream = null;
-                    }
+                    document.getElementById('cropModal').style.display = 'none';
                     cropper.destroy();
                     cropper = null;
-                    console.log('Image cropped and saved to file input');
-                }, 'image/jpeg', 0.8);
+                    currentCropSide = null;
+                    console.log('Image cropped and set to file input');
+                }, 'image/jpeg');
             }
+        });
+
+        document.getElementById('cancelCrop').addEventListener('click', () => {
+            document.getElementById('cropModal').style.display = 'none';
+            if (cropper) {
+                cropper.destroy();
+                cropper = null;
+            }
+            currentCropSide = null;
+            fileInput.value = '';
+            hideLoader();
+            console.log('Crop cancelled');
         });
 
         clearImageButton.addEventListener('click', async () => {
