@@ -11,7 +11,10 @@
     />
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <!-- Cropper.js CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/cropperjs@1.5.13/dist/cropper.min.css" rel="stylesheet" />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css"
+      rel="stylesheet"
+    />
     <style>
         body {
             font-family: 'Manrope', 'Noto Sans', sans-serif;
@@ -85,9 +88,39 @@
                 max-width: calc(50% - 0.75rem);
             }
         }
-        /* Modal Cropper */
+        /* Modal Cropper styles */
         #cropperModal {
-            background-color: rgba(0, 0, 0, 0.7);
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        #cropperModal.active {
+            display: flex;
+        }
+        #cropperContainer {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        #cropperImage {
+            max-width: 100%;
+            max-height: 60vh;
+            display: block;
+            margin: 0 auto;
+        }
+        #cropperButtons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
         }
     </style>
 </head>
@@ -123,14 +156,23 @@
                             <p id="dropText" class="drop-text text-center">
                                 Drag and drop an image here
                             </p>
+
+                            <!-- Deux inputs séparés -->
                             <input
                                 type="file"
-                                id="image"
+                                id="fileUpload"
                                 name="image"
+                                accept="image/*"
+                                class="hidden"
+                            />
+                            <input
+                                type="file"
+                                id="fileCamera"
                                 accept="image/*"
                                 capture="environment"
                                 class="hidden"
                             />
+
                             <div
                                 id="previewContainer"
                                 class="preview-container mt-6 w-full {% if not image_path %}hidden{% endif %}"
@@ -161,8 +203,8 @@
                             <button
                                 id="extractButton"
                                 type="submit"
+                                class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]"
                                 disabled
-                                class="flex min-w-[120px] cursor-not-allowed opacity-50 items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]"
                             >
                                 <span>Extract Ingredients</span>
                             </button>
@@ -199,182 +241,196 @@
     </div>
 
     <!-- Modal Cropper -->
-    <div id="cropperModal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden z-50">
-      <div class="bg-white rounded-lg p-4 max-w-lg w-full">
-        <div class="relative w-full" style="max-height:400px;">
-          <img id="cropperImage" style="max-width: 100%; max-height: 400px; display: block; margin: 0 auto;" />
+    <div id="cropperModal">
+        <div id="cropperContainer">
+            <img id="cropperImage" alt="Image à recadrer" />
+            <div id="cropperButtons">
+                <button id="cropperCancel" type="button" class="rounded px-4 py-2 bg-gray-300 hover:bg-gray-400">Annuler</button>
+                <button id="cropperConfirm" type="button" class="rounded px-4 py-2 bg-purple-600 text-white hover:bg-purple-700">Valider</button>
+            </div>
         </div>
-        <div class="flex justify-end gap-3 mt-4">
-          <button id="cancelCropBtn" class="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400">Annuler</button>
-          <button id="confirmCropBtn" class="px-4 py-2 rounded bg-purple-700 text-white hover:bg-purple-800">Valider</button>
-        </div>
-      </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.5.13/dist/cropper.min.js"></script>
+    <!-- Cropper.js JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
     <script>
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('image');
-        const previewContainer = document.getElementById('previewContainer');
-        const previewImageElement = document.getElementById('imagePreview');
-        const feedbackMessage = document.getElementById('feedbackMessage');
-        const loader = document.getElementById('loader');
-        const dropText = document.getElementById('dropText');
+        const fileUploadInput = document.getElementById('fileUpload');
+        const fileCameraInput = document.getElementById('fileCamera');
         const uploadButton = document.getElementById('uploadButton');
         const takePhotoButton = document.getElementById('takePhotoButton');
-        const extractButton = document.getElementById('extractButton');
+        const previewContainer = document.getElementById('previewContainer');
+        const imagePreview = document.getElementById('imagePreview');
         const clearImageButton = document.getElementById('clearImageButton');
+        const form = document.getElementById('uploadForm');
+        const feedbackMessage = document.getElementById('feedbackMessage');
+        const extractButton = document.getElementById('extractButton');
+        const dropZone = document.getElementById('dropZone');
+        const dropText = document.getElementById('dropText');
+        const loader = document.getElementById('loader');
 
-        const cropperModal = document.getElementById('cropperModal');
-        const cropperImage = document.getElementById('cropperImage');
-        const cancelCropBtn = document.getElementById('cancelCropBtn');
-        const confirmCropBtn = document.getElementById('confirmCropBtn');
-
-        let cropper = null;
         let currentFile = null;
 
-        // Affiche feedback
-        function showFeedback(message, isError = false) {
-            feedbackMessage.textContent = message;
-            feedbackMessage.classList.remove('hidden');
-            feedbackMessage.style.color = isError ? 'red' : '#756388';
-            setTimeout(() => {
-                feedbackMessage.classList.add('hidden');
-            }, 4000);
-        }
-
-        // Affiche image preview
-        function previewImage(file) {
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                previewImageElement.src = e.target.result;
-                previewContainer.classList.remove('hidden');
-                dropText.classList.add('hidden');
-            };
-            reader.readAsDataURL(file);
-        }
-
-        // Ouvre Cropper.js modal
-        function openCropper(file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                cropperImage.src = e.target.result;
-                cropperModal.classList.remove('hidden');
-
-                if (cropper) cropper.destroy();
-                cropper = new Cropper(cropperImage, {
-                    viewMode: 1,
-                    aspectRatio: NaN, // changer pour ratio fixe si besoin
-                    autoCropArea: 1,
-                    movable: true,
-                    zoomable: true,
-                    rotatable: false,
-                    scalable: false,
-                });
-            };
-            reader.readAsDataURL(file);
-        }
-
-        // Gestion des événements du drag & drop
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('drag-over');
-        });
-
-        dropZone.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                const file = files[0];
-                if (!file.type.startsWith('image/')) {
-                    showFeedback('Veuillez sélectionner un fichier image.', true);
-                    return;
-                }
-                currentFile = file;
-                openCropper(currentFile);
-            }
-        });
-
-        // Upload bouton ouvre file picker
         uploadButton.addEventListener('click', () => {
-            fileInput.click();
+            fileUploadInput.click(); // Ouvre la galerie/fichiers (sans capture)
         });
 
-        // Quand fichier sélectionné via file picker
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length === 0) return;
-            const file = fileInput.files[0];
+        takePhotoButton.addEventListener('click', () => {
+            fileCameraInput.click(); // Ouvre la caméra (avec capture)
+        });
+
+        // Gérer la sélection fichier classique
+        fileUploadInput.addEventListener('change', (e) => {
+            if (fileUploadInput.files.length === 0) return;
+            const file = fileUploadInput.files[0];
             if (!file.type.startsWith('image/')) {
                 showFeedback('Veuillez sélectionner un fichier image.', true);
-                fileInput.value = '';
+                fileUploadInput.value = '';
                 return;
             }
             currentFile = file;
             openCropper(currentFile);
         });
 
-        // Prise de photo simili caméra
-        takePhotoButton.addEventListener('click', () => {
-            // Même comportement que upload mais avec capture environment déjà demandé
-            fileInput.click();
+        // Gérer la photo prise avec caméra
+        fileCameraInput.addEventListener('change', (e) => {
+            if (fileCameraInput.files.length === 0) return;
+            const file = fileCameraInput.files[0];
+            if (!file.type.startsWith('image/')) {
+                showFeedback('Veuillez sélectionner un fichier image.', true);
+                fileCameraInput.value = '';
+                return;
+            }
+            currentFile = file;
+            openCropper(currentFile);
         });
 
-        // Bouton annuler dans modal cropper
-        cancelCropBtn.addEventListener('click', () => {
-            cropperModal.classList.add('hidden');
-            if (cropper) {
-                cropper.destroy();
-                cropper = null;
-            }
-            fileInput.value = '';
+        // Fonction pour afficher un message de feedback
+        function showFeedback(message, isError = false) {
+            feedbackMessage.textContent = message;
+            feedbackMessage.classList.remove('hidden');
+            feedbackMessage.style.color = isError ? '#cc4a38' : '#756388';
+            setTimeout(() => {
+                feedbackMessage.classList.add('hidden');
+            }, 4000);
+        }
+
+        // Afficher l'image dans l'aperçu
+        function displayPreview(file) {
+            const url = URL.createObjectURL(file);
+            imagePreview.src = url;
+            previewContainer.classList.remove('hidden');
+            extractButton.disabled = false;
+            dropText.classList.add('hidden');
+        }
+
+        // Bouton Clear Image
+        clearImageButton.addEventListener('click', () => {
+            currentFile = null;
+            imagePreview.src = '#';
             previewContainer.classList.add('hidden');
             extractButton.disabled = true;
-            extractButton.classList.add('opacity-50', 'cursor-not-allowed');
+            dropText.classList.remove('hidden');
+            fileUploadInput.value = '';
+            fileCameraInput.value = '';
+            form.reset();
         });
 
-        // Bouton valider dans modal cropper
-        confirmCropBtn.addEventListener('click', () => {
-            if (!cropper) return;
+        // Drag & Drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
 
-            cropper.getCroppedCanvas().toBlob((blob) => {
+        dropZone.addEventListener('dragleave', (e) => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length === 0) return;
+            const file = e.dataTransfer.files[0];
+            if (!file.type.startsWith('image/')) {
+                showFeedback('Veuillez déposer un fichier image.', true);
+                return;
+            }
+            currentFile = file;
+            openCropper(currentFile);
+        });
+
+        // Soumission formulaire
+        form.addEventListener('submit', (e) => {
+            if (!currentFile) {
+                e.preventDefault();
+                showFeedback("Veuillez sélectionner ou prendre une photo avant d'extraire.", true);
+            }
+            // Sinon le formulaire est soumis normalement
+        });
+
+        // Cropper modal et instance
+        const cropperModal = document.getElementById('cropperModal');
+        const cropperImage = document.getElementById('cropperImage');
+        const cropperCancel = document.getElementById('cropperCancel');
+        const cropperConfirm = document.getElementById('cropperConfirm');
+        let cropperInstance = null;
+
+        // Ouvre le cropper modal avec l'image
+        function openCropper(file) {
+            const url = URL.createObjectURL(file);
+            cropperImage.src = url;
+            cropperModal.classList.add('active');
+
+            // Initialiser Cropper.js quand l'image est chargée
+            cropperImage.onload = () => {
+                if (cropperInstance) {
+                    cropperInstance.destroy();
+                }
+                cropperInstance = new Cropper(cropperImage, {
+                    aspectRatio: NaN, // Libre
+                    viewMode: 1,
+                    movable: true,
+                    zoomable: true,
+                    rotatable: true,
+                    scalable: true,
+                    autoCropArea: 1,
+                });
+            };
+        }
+
+        // Annuler cropper
+        cropperCancel.addEventListener('click', () => {
+            cropperModal.classList.remove('active');
+            if (cropperInstance) {
+                cropperInstance.destroy();
+                cropperInstance = null;
+            }
+            currentFile = null;
+            fileUploadInput.value = '';
+            fileCameraInput.value = '';
+        });
+
+        // Confirmer cropper
+        cropperConfirm.addEventListener('click', () => {
+            if (!cropperInstance) return;
+
+            cropperInstance.getCroppedCanvas().toBlob((blob) => {
                 if (!blob) {
-                    showFeedback('Erreur lors du recadrage', true);
+                    showFeedback("Erreur lors du recadrage de l'image.", true);
                     return;
                 }
-                const croppedFile = new File([blob], currentFile.name, { type: currentFile.type });
+                currentFile = new File([blob], currentFile.name, { type: blob.type });
 
-                // Met à jour le fichier input avec fichier recadré
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(croppedFile);
-                fileInput.files = dataTransfer.files;
+                // Afficher l'image recadrée
+                displayPreview(currentFile);
 
-                // Affiche preview
-                previewImage(croppedFile);
+                // Nettoyer le cropper
+                cropperInstance.destroy();
+                cropperInstance = null;
 
-                // Active le bouton extract
-                extractButton.disabled = false;
-                extractButton.classList.remove('opacity-50', 'cursor-not-allowed');
-
-                cropperModal.classList.add('hidden');
-                cropper.destroy();
-                cropper = null;
-            }, currentFile.type || 'image/png');
-        });
-
-        // Bouton clear image
-        clearImageButton.addEventListener('click', () => {
-            fileInput.value = '';
-            previewImageElement.src = '';
-            previewContainer.classList.add('hidden');
-            extractButton.disabled = true;
-            extractButton.classList.add('opacity-50', 'cursor-not-allowed');
+                // Fermer modal
+                cropperModal.classList.remove('active');
+            }, 'image/jpeg');
         });
     </script>
 </body>
