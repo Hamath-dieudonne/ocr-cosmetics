@@ -15,12 +15,16 @@ COPY . .
 ENV TESSERACT_CMD=/usr/bin/tesseract
 
 # Installer Tesseract-OCR dans le conteneur
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    tesseract-ocr-fra \
-    libtesseract-dev \
-    && rm -rf /var/lib/apt/lists/*
+# RUN apt-get update && apt-get install -y \
+#     tesseract-ocr \
+#     tesseract-ocr-eng \
+#     tesseract-ocr-fra \
+#     libtesseract-dev \
+#     && rm -rf /var/lib/apt/lists/*
+
+
+# Installer Tesseract-OCR
+RUN apt-get update && apt-get install -y tesseract-ocr && rm -rf /var/lib/apt/lists/*
 
 # Exposer le port utilisé par FastAPI
 EXPOSE 8000
