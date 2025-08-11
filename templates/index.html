@@ -124,7 +124,7 @@
             <div class="flex items-center gap-2 sm:gap-4 text-[#141118]">
                 <div class="size-4">
                     <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <!-- SVG path unchanged -->
+                        <!-- SVG path inchangé -->
                     </svg>
                 </div>
                 <h2 class="text-[#141118] text-base sm:text-lg font-bold leading-tight tracking-[-0.015em] header-title">Cosmetic Ingredient Extractor</h2>
@@ -454,11 +454,16 @@
         cropButton.addEventListener('click', () => {
             if (cropper) {
                 const croppedCanvas = cropper.getCroppedCanvas();
+                if (croppedCanvas.width < 200 || croppedCanvas.height < 200) {
+                    showFeedback('L\'image rognée est trop petite. Veuillez sélectionner une zone plus grande.', true);
+                    return;
+                }
                 croppedCanvas.toBlob((blob) => {
                     const file = new File([blob], 'cropped_photo.jpg', { type: 'image/jpeg' });
                     const dataTransfer = new DataTransfer();
                     dataTransfer.items.add(file);
                     fileInput.files = dataTransfer.files;
+                    console.log('Cropped image added to fileInput:', file.name, file.size, file.type);
                     previewImage(file);
                     cameraModal.style.display = 'none';
                     if (stream) {
