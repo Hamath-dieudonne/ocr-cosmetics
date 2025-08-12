@@ -75,23 +75,121 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        /* Responsive design pour les boutons */
         @media (max-width: 640px) {
             .button-group {
                 flex-wrap: wrap;
             }
             .button-group button {
-                flex: 1 1 calc(50% - 0.75rem); /* Deux boutons par ligne */
+                flex: 1 1 calc(50% - 0.75rem);
                 max-width: calc(50% - 0.75rem);
             }
         }
-        #cameraModal .cropper-container {
-            margin: 0 auto;
-            max-height: 400px;
+        #cameraModal {
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            transform: scale(0.9);
+            opacity: 0;
+        }
+        #cameraModal.show {
+            transform: scale(1);
+            opacity: 1;
+        }
+        #cameraModal .modal-content {
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            width: 100%;
+            max-width: 600px;
         }
         #cameraModal video, #cameraModal img {
             width: 100%;
             height: auto;
+            border-radius: 10px;
+        }
+        #cameraModal .cropper-container {
+            margin: 0 auto;
+            max-height: 400px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        #cameraModal .cropper-crop-box {
+            border: 2px solid #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.5);
+        }
+        #cameraModal .cropper-view-box {
+            border-radius: 8px;
+        }
+        #cameraModal .cropper-face {
+            opacity: 0.2;
+        }
+        #cameraModal .cropper-line {
+            background-color: #fff;
+            opacity: 0.3;
+        }
+        #cameraModal .cropper-point {
+            background-color: #fff;
+            border: 2px solid #25D366;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        #cameraModal .modal-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 0;
+        }
+        #cameraModal .modal-buttons button {
+            flex: 1;
+            padding: 12px;
+            border-radius: 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        #cameraModal .modal-buttons .confirm-btn {
+            background-color: #25D366;
+            color: #fff;
+        }
+        #cameraModal .modal-buttons .confirm-btn:hover {
+            background-color: #20b858;
+        }
+        #cameraModal .modal-buttons .cancel-btn {
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        #cameraModal .modal-buttons .cancel-btn:hover {
+            background-color: #e0e0e0;
+        }
+        #cameraModal .modal-buttons .capture-btn {
+            background-color: #25D366;
+            color: #fff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+        }
+        #cameraModal .modal-buttons .capture-btn:hover {
+            background-color: #20b858;
+        }
+        #cameraModal .close-btn {
+            background-color: #fff;
+            color: #333;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        #cameraModal .close-btn:hover {
+            background-color: #f0f0f0;
         }
     </style>
 </head>
@@ -203,25 +301,24 @@
 
     <!-- Modal for camera and crop -->
     <div id="cameraModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-4 rounded-lg relative w-full max-w-md mx-4">
-            <button id="closeModal" class="absolute top-2 right-2 text-xl font-bold text-gray-600 hover:text-gray-800">×</button>
+        <div class="modal-content p-4">
+            <button id="closeModal" class="close-btn absolute top-2 right-2 text-xl font-bold">×</button>
             <div id="cameraView">
-                <video id="cameraVideo" autoplay playsinline class="w-full h-auto rounded-md"></video>
-                <div class="flex justify-center mt-4">
-                    <button id="capturePhoto" class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]">
-                        <span>Capture</span>
+                <video id="cameraVideo" autoplay playsinline></video>
+                <div class="modal-buttons mt-4">
+                    <button id="capturePhoto" class="capture-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
                     </button>
                 </div>
             </div>
             <div id="cropView" class="hidden">
-                <img id="capturedImage" class="w-full h-auto">
-                <div class="flex justify-center gap-4 mt-4">
-                    <button id="cropConfirm" class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]">
-                        <span>Crop & Confirm</span>
-                    </button>
-                    <button id="cropCancel" class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#f2f0f4] text-[#141118] text-sm font-bold leading-normal tracking-[0.015em]">
-                        <span>Cancel</span>
-                    </button>
+                <img id="capturedImage">
+                <div class="modal-buttons mt-4">
+                    <button id="cropConfirm" class="confirm-btn">Confirm</button>
+                    <button id="cropCancel" class="cancel-btn">Cancel</button>
                 </div>
             </div>
         </div>
@@ -302,7 +399,7 @@
             if (isLoading) showLoader();
             else hideLoader();
             if (imagePath) {
-                const fullPath = '/' + imagePath + '?t=' + new Date().getTime(); // Forcer rechargement
+                const fullPath = '/' + imagePath + '?t=' + new Date().getTime();
                 imagePreview.src = fullPath;
                 imagePreview.setAttribute('data-image-path', imagePath);
                 previewContainer.classList.remove('hidden');
@@ -380,6 +477,7 @@
                 stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                 cameraVideo.srcObject = stream;
                 cameraModal.classList.remove('hidden');
+                setTimeout(() => cameraModal.classList.add('show'), 10);
                 cameraView.classList.remove('hidden');
                 cropView.classList.add('hidden');
                 console.log('Camera modal opened');
@@ -392,16 +490,19 @@
         closeModal.addEventListener('click', closeCameraModal);
 
         function closeCameraModal() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            cameraModal.classList.add('hidden');
-            if (cropper) {
-                cropper.destroy();
-                cropper = null;
-            }
-            console.log('Camera modal closed');
+            cameraModal.classList.remove('show');
+            setTimeout(() => {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                cameraModal.classList.add('hidden');
+                if (cropper) {
+                    cropper.destroy();
+                    cropper = null;
+                }
+                console.log('Camera modal closed');
+            }, 300);
         }
 
         capturePhoto.addEventListener('click', () => {
@@ -417,11 +518,17 @@
                 cropper = new Cropper(capturedImage, {
                     aspectRatio: NaN,
                     viewMode: 1,
-                    autoCropArea: 1,
+                    autoCropArea: 0.8,
                     responsive: true,
                     zoomable: true,
+                    scalable: true,
+                    movable: true,
                     minCropBoxWidth: 100,
                     minCropBoxHeight: 100,
+                    background: false,
+                    cropBoxMovable: true,
+                    cropBoxResizable: true,
+                    dragMode: 'move',
                 });
                 console.log('Cropper initialized');
             }, 100);
