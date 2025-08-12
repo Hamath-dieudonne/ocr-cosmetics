@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Extracteur d'Ingrédients Cosmétiques</title>
+    <title>Cosmetic Ingredient Extractor</title>
     <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="" />
     <link
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?display=swap&family=Manrope:wght@400;500;700;800&family=Noto+Sans:wght@400;500;700;900"
     />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.css" />
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
     <style>
         body {
             font-family: 'Manrope', 'Noto Sans', sans-serif;
@@ -75,45 +75,23 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            justify-content: center;
-            align-items: center;
-        }
-        .modal-content {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            width: 90%;
-            max-width: 640px;
-            position: relative;
-        }
-        .modal-close {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            font-size: 24px;
-            cursor: pointer;
-        }
-        .cropper-container {
-            max-height: 400px;
-            width: 100%;
-        }
+        /* Responsive design pour les boutons */
         @media (max-width: 640px) {
             .button-group {
                 flex-wrap: wrap;
             }
             .button-group button {
-                flex: 1 1 calc(50% - 0.75rem);
+                flex: 1 1 calc(50% - 0.75rem); /* Deux boutons par ligne */
                 max-width: calc(50% - 0.75rem);
             }
+        }
+        #cameraModal .cropper-container {
+            margin: 0 auto;
+            max-height: 400px;
+        }
+        #cameraModal video, #cameraModal img {
+            width: 100%;
+            height: auto;
         }
     </style>
 </head>
@@ -126,16 +104,18 @@
                         <!-- SVG path inchangé -->
                     </svg>
                 </div>
-                <h2 class="text-[#141118] text-base sm:text-lg font-bold leading-tight tracking-[-0.015em] header-title">Extracteur d'Ingrédients Cosmétiques</h2>
+                <h2 class="text-[#141118] text-base sm:text-lg font-bold leading-tight tracking-[-0.015em] header-title">Cosmetic Ingredient Extractor</h2>
             </div>
         </header>
         <div class="px-4 sm:px-8 md:px-16 lg:px-40 flex flex-1 justify-center py-5">
             <div class="layout-content-container flex flex-col max-w-[960px] flex-1">
-                <h2 class="text-[#141118] tracking-tight text-xl sm:text-2xl md:text-[28px] font-bold leading-tight px-4 text-center pb-3 pt-5">
-                    Extraire les Ingrédients Cosmétiques
+                <h2
+                    class="text-[#141118] tracking-tight text-xl sm:text-2xl md:text-[28px] font-bold leading-tight px-4 text-center pb-3 pt-5"
+                >
+                    Extract Cosmetic Ingredients
                 </h2>
                 <p class="text-[#141118] text-sm sm:text-base font-normal leading-normal pb-3 pt-1 px-4 text-center">
-                    Téléchargez une image de la liste des ingrédients d'un produit cosmétique pour extraire les ingrédients au format INCI.
+                    Upload an image of a cosmetic product's ingredient list to extract the ingredients in INCI format.
                 </p>
                 <div class="flex flex-col p-4">
                     <form id="uploadForm" method="POST" enctype="multipart/form-data">
@@ -145,7 +125,7 @@
                         >
                             <div id="loader" class="loader hidden"></div>
                             <p id="dropText" class="drop-text text-center">
-                                Glissez-déposez une image ici
+                                Drag and drop an image here
                             </p>
                             <input
                                 type="file"
@@ -173,21 +153,21 @@
                                 type="button"
                                 class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#f2f0f4] text-[#141118] text-sm font-bold leading-normal tracking-[0.015em]"
                             >
-                                <span>Charger une Image</span>
+                                <span>Upload Image</span>
                             </button>
                             <button
                                 id="takePhotoButton"
                                 type="button"
                                 class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#f2f0f4] text-[#141118] text-sm font-bold leading-normal tracking-[0.015em]"
                             >
-                                <span>Prendre une Photo</span>
+                                <span>Take a Photo</span>
                             </button>
                             <button
                                 id="extractButton"
                                 type="submit"
                                 class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]"
                             >
-                                <span>Extraire les Ingrédients</span>
+                                <span>Extract Ingredients</span>
                             </button>
                             <button
                                 id="clearImageButton"
@@ -195,7 +175,7 @@
                                 class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#f2f0f4] text-[#141118] text-sm font-bold leading-normal tracking-[0.015em]"
                                 data-image-path="{% if image_path %}{{ image_path }}{% endif %}"
                             >
-                                <span>Effacer l'Image</span>
+                                <span>Clear Image</span>
                             </button>
                         </div>
                         <p id="feedbackMessage" class="feedback-message hidden text-center text-sm font-normal leading-normal pb-3 pt-1 px-4 text-[#756388]"></p>
@@ -220,27 +200,29 @@
             </div>
         </div>
     </div>
-    <div id="cameraModal" class="modal">
-        <div class="modal-content">
-            <span class="modal-close">&times;</span>
-            <video id="cameraStream" autoplay style="width: 100%; max-height: 400px;"></video>
-            <canvas id="captureCanvas" style="display: none;"></canvas>
-            <div id="cropContainer" style="display: none;">
-                <img id="cropImage" style="width: 100%;" />
+
+    <!-- Modal for camera and crop -->
+    <div id="cameraModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-4 rounded-lg relative w-full max-w-md mx-4">
+            <button id="closeModal" class="absolute top-2 right-2 text-xl font-bold text-gray-600 hover:text-gray-800">×</button>
+            <div id="cameraView">
+                <video id="cameraVideo" autoplay playsinline class="w-full h-auto rounded-md"></video>
+                <div class="flex justify-center mt-4">
+                    <button id="capturePhoto" class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]">
+                        <span>Capture</span>
+                    </button>
+                </div>
             </div>
-            <div class="flex justify-center gap-3 mt-4">
-                <button
-                    id="captureButton"
-                    class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]"
-                >
-                    Capturer
-                </button>
-                <button
-                    id="cropButton"
-                    class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#f2f0f4] text-[#141118] text-sm font-bold leading-normal tracking-[0.015em] hidden"
-                >
-                    Rogner & Enregistrer
-                </button>
+            <div id="cropView" class="hidden">
+                <img id="capturedImage" class="w-full h-auto">
+                <div class="flex justify-center gap-4 mt-4">
+                    <button id="cropConfirm" class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]">
+                        <span>Crop & Confirm</span>
+                    </button>
+                    <button id="cropCancel" class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#f2f0f4] text-[#141118] text-sm font-bold leading-normal tracking-[0.015em]">
+                        <span>Cancel</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -258,16 +240,20 @@
         const dropText = document.getElementById('dropText');
         const loader = document.getElementById('loader');
         const extractButton = document.getElementById('extractButton');
+
+        // Modal elements
         const cameraModal = document.getElementById('cameraModal');
-        const cameraStream = document.getElementById('cameraStream');
-        const captureCanvas = document.getElementById('captureCanvas');
-        const cropContainer = document.getElementById('cropContainer');
-        const cropImage = document.getElementById('cropImage');
-        const captureButton = document.getElementById('captureButton');
-        const cropButton = document.getElementById('cropButton');
-        const modalClose = document.querySelector('.modal-close');
-        let cropper = null;
-        let stream = null;
+        const closeModal = document.getElementById('closeModal');
+        const cameraVideo = document.getElementById('cameraVideo');
+        const capturePhoto = document.getElementById('capturePhoto');
+        const cropView = document.getElementById('cropView');
+        const cameraView = document.getElementById('cameraView');
+        const capturedImage = document.getElementById('capturedImage');
+        const cropConfirm = document.getElementById('cropConfirm');
+        const cropCancel = document.getElementById('cropCancel');
+
+        let stream;
+        let cropper;
 
         if (!dropText) console.error('Erreur : #dropText non trouvé dans le DOM');
         else console.log('dropText trouvé dans le DOM');
@@ -316,12 +302,12 @@
             if (isLoading) showLoader();
             else hideLoader();
             if (imagePath) {
-                const fullPath = '/' + imagePath + '?t=' + new Date().getTime();
+                const fullPath = '/' + imagePath + '?t=' + new Date().getTime(); // Forcer rechargement
                 imagePreview.src = fullPath;
                 imagePreview.setAttribute('data-image-path', imagePath);
                 previewContainer.classList.remove('hidden');
                 clearImageButton.setAttribute('data-image-path', imagePath);
-                console.log('Chemin de l\'image mis à jour après redirection :', fullPath);
+                console.log('Image path updated after redirection:', fullPath);
             }
             console.log('is_loading:', isLoading);
         });
@@ -329,12 +315,12 @@
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('drag-over');
-            console.log('Glisser sur la zone de dépôt');
+            console.log('Drag over drop zone');
         });
 
         dropZone.addEventListener('dragleave', () => {
             dropZone.classList.remove('drag-over');
-            console.log('Sortie de la zone de dépôt');
+            console.log('Drag left drop zone');
         });
 
         dropZone.addEventListener('drop', (e) => {
@@ -346,7 +332,7 @@
                 fileInput.files = files;
                 previewImage(files[0]);
             }
-            console.log('Fichier déposé :', files.length > 0 ? files[0].name : 'Aucun fichier');
+            console.log('File dropped:', files.length > 0 ? files[0].name : 'No file');
         });
 
         fileInput.addEventListener('change', () => {
@@ -354,7 +340,7 @@
                 showLoader();
                 previewImage(fileInput.files[0]);
             }
-            console.log('Changement de l\'input fichier :', fileInput.files.length > 0 ? fileInput.files[0].name : 'Aucun fichier');
+            console.log('File input changed:', fileInput.files.length > 0 ? fileInput.files[0].name : 'No file');
         });
 
         function previewImage(file) {
@@ -364,7 +350,7 @@
                 imagePreview.src = e.target.result;
                 imagePreview.setAttribute('data-image-path', '');
                 hideLoader();
-                console.log('Aperçu de l\'image mis à jour :', file.name);
+                console.log('Image preview updated:', file.name);
             };
             reader.onerror = (e) => {
                 console.error('Erreur lors de la lecture du fichier :', e);
@@ -381,120 +367,96 @@
                 e.target.closest('#takePhotoButton')
             ) return;
             fileInput.click();
-            console.log('Zone de dépôt cliquée pour ouvrir l\'input fichier');
+            console.log('Drop zone clicked to open file input');
         });
 
         uploadButton.addEventListener('click', () => {
             fileInput.click();
-            console.log('Bouton de chargement cliqué');
+            console.log('Upload button clicked');
         });
 
         takePhotoButton.addEventListener('click', async () => {
             try {
-                showLoader();
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    } 
-                });
-                cameraStream.srcObject = stream;
-                cameraModal.style.display = 'flex';
-                captureButton.classList.remove('hidden');
-                cropButton.classList.add('hidden');
-                cropContainer.style.display = 'none';
-                cameraStream.style.display = 'block';
-                if (cropper) {
-                    cropper.destroy();
-                    cropper = null;
-                }
-                // Attendre que la vidéo soit prête
-                cameraStream.onloadedmetadata = () => {
-                    console.log('Flux vidéo prêt, résolution :', cameraStream.videoWidth, 'x', cameraStream.videoHeight);
-                    if (cameraStream.videoWidth < 200 || cameraStream.videoHeight < 200) {
-                        stream.getTracks().forEach(track => track.stop());
-                        stream = null;
-                        cameraModal.style.display = 'none';
-                        hideLoader();
-                        showFeedback('La résolution de la caméra est trop basse. Utilisez une caméra de meilleure qualité.', true);
-                        return;
-                    }
-                    hideLoader();
-                    console.log('Caméra ouverte');
-                };
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                cameraVideo.srcObject = stream;
+                cameraModal.classList.remove('hidden');
+                cameraView.classList.remove('hidden');
+                cropView.classList.add('hidden');
+                console.log('Camera modal opened');
             } catch (err) {
-                console.error('Erreur d\'accès à la caméra :', err);
-                hideLoader();
+                console.error('Error accessing camera:', err);
                 showFeedback('Impossible d\'accéder à la caméra. Veuillez vérifier les permissions.', true);
             }
         });
 
-        modalClose.addEventListener('click', () => {
-            cameraModal.style.display = 'none';
+        closeModal.addEventListener('click', closeCameraModal);
+
+        function closeCameraModal() {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
                 stream = null;
             }
+            cameraModal.classList.add('hidden');
             if (cropper) {
                 cropper.destroy();
                 cropper = null;
             }
-            cameraStream.style.display = 'none';
-            cropContainer.style.display = 'none';
-            console.log('Modale de caméra fermée');
+            console.log('Camera modal closed');
+        }
+
+        capturePhoto.addEventListener('click', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = cameraVideo.videoWidth;
+            canvas.height = cameraVideo.videoHeight;
+            canvas.getContext('2d').drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+            capturedImage.src = canvas.toDataURL('image/jpeg');
+            cameraView.classList.add('hidden');
+            cropView.classList.remove('hidden');
+
+            setTimeout(() => {
+                cropper = new Cropper(capturedImage, {
+                    aspectRatio: NaN,
+                    viewMode: 1,
+                    autoCropArea: 1,
+                    responsive: true,
+                    zoomable: true,
+                    minCropBoxWidth: 100,
+                    minCropBoxHeight: 100,
+                });
+                console.log('Cropper initialized');
+            }, 100);
         });
 
-        captureButton.addEventListener('click', () => {
-            captureCanvas.width = cameraStream.videoWidth;
-            captureCanvas.height = cameraStream.videoHeight;
-            const context = captureCanvas.getContext('2d');
-            context.drawImage(cameraStream, 0, 0, captureCanvas.width, captureCanvas.height);
-            cropImage.src = captureCanvas.toDataURL('image/jpeg', 0.9);
-            cameraStream.style.display = 'none';
-            cropContainer.style.display = 'block';
-            captureButton.classList.add('hidden');
-            cropButton.classList.remove('hidden');
-            cropper = new Cropper(cropImage, {
-                aspectRatio: NaN,
-                viewMode: 1,
-                autoCropArea: 0.8,
-                movable: true,
-                zoomable: true,
-                scalable: true,
-                cropBoxResizable: true,
-            });
-            console.log('Image capturée, cropper initialisé');
-        });
-
-        cropButton.addEventListener('click', () => {
+        cropConfirm.addEventListener('click', () => {
             if (cropper) {
-                const croppedCanvas = cropper.getCroppedCanvas();
-                if (croppedCanvas.width < 200 || croppedCanvas.height < 200) {
-                    showFeedback('L\'image rognée est trop petite. Veuillez sélectionner une zone plus grande.', true);
-                    return;
-                }
+                const croppedCanvas = cropper.getCroppedCanvas({
+                    fillColor: '#fff',
+                    imageSmoothingQuality: 'high',
+                });
                 croppedCanvas.toBlob((blob) => {
-                    const file = new File([blob], 'cropped_photo.jpg', { type: 'image/jpeg' });
+                    const file = new File([blob], 'photo_cropped.jpg', { type: 'image/jpeg' });
                     const dataTransfer = new DataTransfer();
                     dataTransfer.items.add(file);
                     fileInput.files = dataTransfer.files;
-                    console.log('Image rognée ajoutée à fileInput :', file.name, file.size, file.type);
                     previewImage(file);
-                    cameraModal.style.display = 'none';
-                    if (stream) {
-                        stream.getTracks().forEach(track => track.stop());
-                        stream = null;
-                    }
-                    cropper.destroy();
-                    cropper = null;
-                    console.log('Image rognée et enregistrée dans fileInput');
-                }, 'image/jpeg', 0.9);
+                    closeCameraModal();
+                    console.log('Cropped image confirmed and set');
+                }, 'image/jpeg', 0.95);
             }
         });
 
+        cropCancel.addEventListener('click', () => {
+            cameraView.classList.remove('hidden');
+            cropView.classList.add('hidden');
+            if (cropper) {
+                cropper.destroy();
+                cropper = null;
+            }
+            console.log('Crop cancelled, back to camera view');
+        });
+
         clearImageButton.addEventListener('click', async () => {
-            console.log('Effacer l\'image cliqué');
+            console.log('Clear image clicked');
             const imagePath = clearImageButton.getAttribute('data-image-path');
             if (imagePath) {
                 try {
@@ -515,7 +477,7 @@
                         showFeedback('Erreur lors de la suppression de l\'image', true);
                     }
                 } catch (err) {
-                    console.error('Erreur lors de la suppression de l\'image :', err);
+                    console.error('Error deleting image:', err);
                     showFeedback('Erreur lors de la suppression de l\'image', true);
                 }
             }
