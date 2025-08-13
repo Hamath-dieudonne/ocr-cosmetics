@@ -25,6 +25,8 @@ import io
 from rapidfuzz import process, fuzz
 
 import pytesseract
+import cv2
+import numpy as np  # <-- Ajout pour traitement d'image
 
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG)
@@ -45,8 +47,6 @@ CLEAN_INGREDIENT_RE = re.compile(r'[^a-zA-Z0-9\s-]')
 chemical_db = []
 common_db = []
 chemical_index = defaultdict(list)
-
-
 
 @app.get("/static/{file_path:path}")
 async def serve_static(file_path: str):
@@ -91,27 +91,21 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error loading INCI catalog or environment: {str(e)}")
 
-
 @lru_cache(maxsize=1000)
-
 def get_top_chemicals(query, threshold=86, top_n=3):
     cleaned_query = query.strip().upper()
     first_letter = cleaned_query[0].upper()
     candidates = chemical_index.get(first_letter, chemical_db)
 
-    # Étape 1: token_set_ratio pour pré-filtrage
     token_set_results = process.extract(
         cleaned_query,
         candidates,
         scorer=fuzz.token_set_ratio,
-        limit=top_n*5  # on prend plus large pour la deuxième étape
+        limit=top_n*5
     )
-
-    # On ne garde que ceux au-dessus du seuil
     filtered_candidates = [r[0] for r in token_set_results if r[1] >= threshold]
 
     if filtered_candidates:
-        # Étape 2: token_sort_ratio pour départager
         token_sort_results = process.extract(
             cleaned_query,
             filtered_candidates,
@@ -119,14 +113,10 @@ def get_top_chemicals(query, threshold=86, top_n=3):
             limit=top_n
         )
         best_score = token_sort_results[0][1]
-        # Garde ceux avec meilleur score token_sort_ratio
         best_matches = [r for r in token_sort_results if r[1] == best_score]
-        # Trier par proximité de longueur
         best_matches.sort(key=lambda x: abs(len(x[0]) - len(cleaned_query)))
         return [best_matches[0]]
-
     else:
-        # fallback: on essaie toute la DB avec token_set_ratio
         fallback_results = process.extract(
             cleaned_query,
             chemical_db,
@@ -141,9 +131,6 @@ def get_top_chemicals(query, threshold=86, top_n=3):
 
     return ["NF"]
 
-
-
-
 def detect_separator(text: str) -> str | None:
     possible_separators = [',']
     counts = Counter(char for char in text if char in possible_separators)
@@ -156,7 +143,6 @@ def process_inci_list(raw_text: str) -> str:
     if not raw_text:
         logger.warning("No raw text provided")
         return ""
-
     logger.debug(f"Raw text received: {raw_text}")
     raw_text = re.sub(r'\bIngredients\b[-:\s]*', '', raw_text, flags=re.IGNORECASE)
     cleaned_text = SEPARATOR_RE.sub(',', raw_text.strip())
@@ -193,9 +179,6 @@ def process_inci_list(raw_text: str) -> str:
 
     final_ingredients = [match[0][0].title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     return ', '.join(final_ingredients) if final_ingredients else "Aucun ingrédient détecté"
-
-# ... (les autres routes restent inchangées: /, POST /, /cleanup, /delete_image)
-
 
 @app.head("/")
 async def head_root():
@@ -254,12 +237,35 @@ async def index(request: Request, image: UploadFile = File(None)):
     try:
         logger.info("Attempting to open image for OCR")
         img = Image.open(image_path).convert('L')
+
+        # ======= Nouveau pipeline de traitement pour images floues =======
+        cv_img = np.array(img)
+
+        # Réduction du bruit
+        cv_img = cv2.bilateralFilter(cv_img, d=9, sigmaColor=75, sigmaSpace=75)
+
+        # Défloutage (unsharp mask)
+        gaussian = cv2.GaussianBlur(cv_img, (0, 0), 3)
+        unsharp_img = cv2.addWeighted(cv_img, 1.5, gaussian, -0.5, 0)
+
+        # Binarisation adaptative
+        thresh = cv2.adaptiveThreshold(
+            unsharp_img,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            2
+        )
+
+        img = Image.fromarray(thresh)
         img = ImageEnhance.Contrast(img).enhance(2.0)
+        # ===============================================================
+
         logger.info("Image opened and preprocessed successfully")
         raw_text = pytesseract.image_to_string(img, lang="eng+fra", config="--psm 6")
         logger.debug(f"Raw extracted text: {raw_text}")
         
-        # Profilage de process_inci_list
         profiler = cProfile.Profile()
         profiler.enable()
         start_time = time.time()
@@ -267,10 +273,9 @@ async def index(request: Request, image: UploadFile = File(None)):
         profiler.disable()
         logger.info(f"Processed INCI list in {time.time() - start_time:.2f} seconds")
         
-        # Sauvegarder les résultats du profilage
         s = io.StringIO()
         ps = pstats.Stats(profiler, stream=s).sort_stats('cumulative')
-        ps.print_stats(10)  # Limiter à 10 lignes
+        ps.print_stats(10)
         logger.info(f"Profiling results:\n{s.getvalue()}")
 
     except Exception as e:
@@ -297,7 +302,7 @@ async def cleanup():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         if os.path.isfile(file_path):
             file_age = current_time - os.path.getmtime(file_path)
-            if file_age > 3600:  # 1 heure
+            if file_age > 3600:
                 try:
                     os.remove(file_path)
                     logger.info(f"Deleted old file: {file_path}")
@@ -306,9 +311,6 @@ async def cleanup():
     return {"message": "Cleanup completed"}
 
 def validate_image_path(image_path: str, base_dir: str = "static/uploads") -> bool:
-    """
-    Vérifie que le chemin reste bien dans le dossier autorisé, pour éviter toute tentative d'accès en dehors.
-    """
     full_path = os.path.abspath(image_path)
     base_path = os.path.abspath(base_dir)
     return full_path.startswith(base_path)
