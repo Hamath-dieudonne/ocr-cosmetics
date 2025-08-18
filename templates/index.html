@@ -115,27 +115,29 @@
             overflow: hidden;
         }
         #cameraModal .cropper-crop-box {
-            border: 2px solid #fff;
+            border: 2px solid #9642ea;
             border-radius: 8px;
-            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.6);
         }
         #cameraModal .cropper-view-box {
             border-radius: 8px;
+            outline: 2px solid #9642ea;
         }
         #cameraModal .cropper-face {
-            opacity: 0.2;
+            opacity: 0.1;
         }
         #cameraModal .cropper-line {
-            background-color: #fff;
-            opacity: 0.3;
+            background-color: #9642ea !important;
+            opacity: 0.9 !important;
         }
         #cameraModal .cropper-point {
-            background-color: #fff;
-            border: 2px solid #25D366;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
+            background-color: #9642ea !important;
+            border: 2px solid #fff !important;
+            width: 14px !important;
+            height: 14px !important;
+            border-radius: 50% !important;
         }
+
         #cameraModal .modal-buttons {
             display: flex;
             justify-content: space-between;
@@ -522,13 +524,13 @@
                     responsive: true,
                     zoomable: true,
                     scalable: true,
-                    movable: true,
+                    movable: false,
                     minCropBoxWidth: 100,
                     minCropBoxHeight: 100,
                     background: false,
-                    cropBoxMovable: true,
+                    cropBoxMovable: false,
                     cropBoxResizable: true,
-                    dragMode: 'move',
+                    dragMode: 'none',
                 });
                 console.log('Cropper initialized');
             }, 100);
