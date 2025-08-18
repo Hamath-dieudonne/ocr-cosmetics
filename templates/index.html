@@ -489,7 +489,10 @@
 
         takePhotoButton.addEventListener('click', async () => {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment',
+                width: { ideal: 4032 },  // résolution idéale largeur
+                height: { ideal: 3024 }  // résolution idéale hauteur
+                } });
                 cameraVideo.srcObject = stream;
                 cameraModal.classList.remove('hidden');
                 setTimeout(() => cameraModal.classList.add('show'), 10);
@@ -563,7 +566,7 @@
                     previewImage(file);
                     closeCameraModal();
                     console.log('Cropped image confirmed and set');
-                }, 'image/jpeg', 0.95);
+                }, 'image/jpeg', 0.98);
             }
         });
 
