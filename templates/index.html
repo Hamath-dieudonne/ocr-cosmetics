@@ -97,7 +97,7 @@
             background: #fff;
             border-radius: 20px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            max-height: 80vh;
+            max-height: 100%;
             overflow-y: auto;
             position: relative;
             width: 100%;
@@ -110,26 +110,39 @@
         }
         #cameraModal .cropper-container {
             margin: 0 auto;
-            max-height: 400px;
+            max-height: 80vh; /* permet de voir l'image entière */
             border-radius: 10px;
-            overflow: hidden;
+            overflow: visible; /* pour ne pas couper le bas */
         }
+
+        #cameraModal video,
+        #cameraModal img {
+            width: 100%;
+            height: auto;
+            max-height: 80vh; /* s'adapte à la modal */
+            border-radius: 10px;
+        }
+
         #cameraModal .cropper-crop-box {
             border: 2px solid #9642ea;
             border-radius: 8px;
             box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.6);
         }
+
         #cameraModal .cropper-view-box {
             border-radius: 8px;
             outline: 2px solid #9642ea;
         }
+
         #cameraModal .cropper-face {
             opacity: 0.1;
         }
+
         #cameraModal .cropper-line {
             background-color: #9642ea !important;
             opacity: 0.9 !important;
         }
+
         #cameraModal .cropper-point {
             background-color: #9642ea !important;
             border: 2px solid #fff !important;
