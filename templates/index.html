@@ -103,7 +103,7 @@
             width: 100%;
             max-width: 600px;
         }
-        #cameraModal img {
+        #cameraModal video, #cameraModal img {
             width: 100%;
             height: auto;
             max-height: 80vh;
@@ -210,7 +210,6 @@
                                 Drag and drop an image here
                             </p>
                             <input type="file" id="image" name="image" accept="image/*" class="hidden" aria-hidden="true" />
-                            <input type="file" id="nativeCameraInput" accept="image/*" capture="environment" style="display:none;" aria-hidden="true" />
                             <div id="previewContainer" class="preview-container mt-6 w-full hidden">
                                 <img id="imagePreview" src="#" alt="Aperçu de l'image" />
                             </div>
@@ -245,11 +244,14 @@
                 </svg>
             </button>
             <h2 id="modalTitle" class="sr-only">Rogner l'image</h2>
+            <video id="cameraStream" autoplay playsinline style="display: none;"></video>
+            <canvas id="captureCanvas" style="display: none;"></canvas>
             <div id="cropView" class="hidden">
                 <img id="capturedImage" alt="Photo à rogner">
             </div>
             <div class="modal-buttons mt-4">
-                <button id="savePhoto" class="confirm-btn" aria-label="Sauvegarder l'image">Save</button>
+                <button id="capturePhoto" class="confirm-btn" style="display: none;" aria-label="Capturer la photo">Capture</button>
+                <button id="savePhoto" class="confirm-btn" style="display: none;" aria-label="Sauvegarder l'image">Save</button>
                 <button id="cropCancel" class="cancel-btn" aria-label="Annuler">Cancel</button>
             </div>
         </div>
@@ -257,7 +259,6 @@
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('image');
-        const nativeCameraInput = document.getElementById('nativeCameraInput');
         const previewContainer = document.getElementById('previewContainer');
         const imagePreview = document.getElementById('imagePreview');
         const uploadButton = document.getElementById('uploadButton');
@@ -272,11 +273,15 @@
         const closeModal = document.getElementById('closeModal');
         const cropView = document.getElementById('cropView');
         const capturedImage = document.getElementById('capturedImage');
+        const cameraStream = document.getElementById('cameraStream');
+        const captureCanvas = document.getElementById('captureCanvas');
+        const capturePhoto = document.getElementById('capturePhoto');
         const savePhoto = document.getElementById('savePhoto');
         const cropCancel = document.getElementById('cropCancel');
         const toggleCropButton = document.getElementById('toggleCropButton');
         let cropper = null;
         let isCropping = false;
+        let stream = null;
         let feedbackQueue = [];
         let isShowingFeedback = false;
 
@@ -422,43 +427,64 @@
             fileInput.click();
         });
 
+        async function startCamera() {
+            try {
+                console.log('Starting camera with getUserMedia');
+                const constraints = {
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                };
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                cameraStream.srcObject = stream;
+                cameraStream.style.display = 'block';
+                capturePhoto.style.display = 'block';
+                savePhoto.style.display = 'none';
+                toggleCropButton.style.display = 'none';
+                cropView.style.display = 'none';
+                cameraModal.classList.remove('hidden');
+                setTimeout(() => cameraModal.classList.add('show'), 10);
+                console.log('Camera stream started');
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                showFeedback('Erreur lors de l\'accès à la caméra. Veuillez vérifier les permissions.', true);
+                closeCameraModal();
+            }
+        }
+
         takePhotoButton.addEventListener('click', () => {
-            nativeCameraInput.click();
+            console.log('Take Photo button clicked');
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showFeedback('La caméra n\'est pas supportée par ce navigateur.', true);
+                return;
+            }
+            startCamera();
         });
 
-        nativeCameraInput.addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
-            if (!file.type.startsWith('image/')) {
-                showFeedback('Veuillez sélectionner une image valide.', true);
-                return;
+        capturePhoto.addEventListener('click', () => {
+            console.log('Capture photo clicked');
+            const context = captureCanvas.getContext('2d');
+            captureCanvas.width = cameraStream.videoWidth;
+            captureCanvas.height = cameraStream.videoHeight;
+            context.drawImage(cameraStream, 0, 0, captureCanvas.width, captureCanvas.height);
+            capturedImage.src = captureCanvas.toDataURL('image/jpeg', 1.0);
+            cameraStream.style.display = 'none';
+            capturePhoto.style.display = 'none';
+            cropView.classList.remove('hidden');
+            toggleCropButton.style.display = 'block';
+            savePhoto.style.display = 'block';
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
             }
-            if (file.size > 10 * 1024 * 1024) {
-                showFeedback('L\'image est trop volumineuse (limite : 10 Mo).', true);
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                capturedImage.src = e.target.result;
-                capturedImage.onload = () => {
-                    cameraModal.classList.remove('hidden');
-                    setTimeout(() => cameraModal.classList.add('show'), 10);
-                    cropView.classList.remove('hidden');
-                    toggleCropButton.style.display = 'block';
-                    isCropping = false;
-                    if (cropper) cropper.destroy();
-                    cropper = null;
-                };
-            };
-            reader.onerror = () => {
-                showFeedback('Erreur lors de la lecture de l\'image.', true);
-            };
-            reader.readAsDataURL(file);
+            console.log('Photo captured, ready for cropping');
         });
 
         toggleCropButton.addEventListener('click', () => {
             isCropping = !isCropping;
+            console.log('Toggling crop mode:', isCropping);
             if (isCropping) {
                 if (cropper) cropper.destroy();
                 cropper = new Cropper(capturedImage, {
@@ -487,6 +513,7 @@
         });
 
         savePhoto.addEventListener('click', () => {
+            console.log('Save photo clicked, cropping:', isCropping);
             let blob;
             if (isCropping && cropper) {
                 const croppedCanvas = cropper.getCroppedCanvas({
@@ -496,29 +523,36 @@
                 croppedCanvas.toBlob(
                     (b) => {
                         blob = b;
+                        console.log('Cropped image blob size:', blob.size);
                         saveImage(blob);
                     },
                     'image/jpeg',
                     1.0
                 );
             } else {
-                fetch(capturedImage.src)
-                    .then((res) => res.blob())
-                    .then((b) => {
+                captureCanvas.toBlob(
+                    (b) => {
                         blob = b;
+                        console.log('Original image blob size:', blob.size);
                         saveImage(blob);
-                    })
-                    .catch(() => {
-                        showFeedback('Erreur lors de la sauvegarde de l\'image.', true);
-                    });
+                    },
+                    'image/jpeg',
+                    1.0
+                );
             }
         });
 
         function saveImage(blob) {
+            if (blob.size > 10 * 1024 * 1024) {
+                showFeedback('L\'image est trop volumineuse (limite : 10 Mo).', true);
+                closeCameraModal();
+                return;
+            }
             const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             fileInput.files = dataTransfer.files;
+            console.log('Image saved to fileInput, file size:', file.size);
 
             const url = URL.createObjectURL(blob);
             imagePreview.src = url;
@@ -540,11 +574,13 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && !cameraModal.classList.contains('hidden')) {
+                console.log('Escape key pressed, closing modal');
                 closeCameraModal();
             }
         });
 
         function closeCameraModal() {
+            console.log('Closing camera modal');
             cameraModal.classList.remove('show');
             setTimeout(() => {
                 cameraModal.classList.add('hidden');
@@ -552,10 +588,17 @@
                     cropper.destroy();
                     cropper = null;
                 }
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                cameraStream.style.display = 'none';
+                capturePhoto.style.display = 'none';
+                savePhoto.style.display = 'none';
                 toggleCropButton.style.display = 'none';
                 isCropping = false;
                 toggleCropButton.querySelector('svg').style.stroke = 'currentColor';
-                nativeCameraInput.value = '';
+                cropView.classList.add('hidden');
             }, 300);
         }
 
@@ -582,7 +625,6 @@
                 }
             }
             fileInput.value = '';
-            nativeCameraInput.value = '';
             hideLoader();
             const existingResults = document.getElementById('resultsContainer');
             const existingError = document.getElementById('errorMessage');
@@ -604,12 +646,15 @@
             extractButton.classList.add('opacity-50', 'cursor-not-allowed');
 
             const formData = new FormData(form);
+            console.log('Submitting form, file:', fileInput.files[0]?.name, 'size:', fileInput.files[0]?.size);
             try {
                 const response = await fetch('/', {
                     method: 'POST',
                     body: formData,
                 });
+                console.log('Backend response status:', response.status);
                 const result = await response.json();
+                console.log('Backend response data:', result);
                 hideLoader();
                 extractButton.disabled = false;
                 extractButton.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -620,15 +665,16 @@
                     resultsContainer.innerHTML = `<div class="inci-text text-[#141118] text-sm sm:text-base font-normal leading-normal pb-3 pt-1 px-4">${result.extracted_text}</div>`;
                     form.appendChild(resultsContainer);
                 } else if (result.error) {
-                    showFeedback(result.error, true);
+                    showFeedback(`Erreur: ${result.error}`, true);
                 } else {
                     showFeedback('Aucun ingrédient détecté', false);
                 }
             } catch (err) {
+                console.error('Extraction error:', err);
                 hideLoader();
                 extractButton.disabled = false;
                 extractButton.classList.remove('opacity-50', 'cursor-not-allowed');
-                showFeedback('Erreur lors de l\'extraction des ingrédients', true);
+                showFeedback(`Erreur lors de l'extraction des ingrédients: ${err.message}`, true);
             }
         });
     </script>

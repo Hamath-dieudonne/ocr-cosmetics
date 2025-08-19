@@ -26,7 +26,7 @@ from rapidfuzz import process, fuzz
 
 import pytesseract
 import cv2
-import numpy as np  # <-- Ajout pour traitement d'image
+import numpy as np
 
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG)
@@ -39,7 +39,7 @@ templates = Jinja2Templates(directory="templates")
 
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_FILE_SIZE = 10 * 1024 * 1024  # Augmenté à 10 Mo pour correspondre au frontend
 
 SEPARATOR_RE = re.compile(r'[;*+\»]+')
 CLEAN_INGREDIENT_RE = re.compile(r'[^a-zA-Z0-9\s-]')
@@ -180,6 +180,16 @@ def process_inci_list(raw_text: str) -> str:
     final_ingredients = [match[0][0].title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     return ', '.join(final_ingredients) if final_ingredients else "Aucun ingrédient détecté"
 
+def check_image_quality(img: Image.Image) -> bool:
+    try:
+        cv_img = np.array(img)
+        laplacian = cv2.Laplacian(cv_img, cv2.CV_64F).var()
+        logger.debug(f"Image quality (Laplacian variance): {laplacian}")
+        return laplacian > 100  # Seuil pour détecter les images floues
+    except Exception as e:
+        logger.error(f"Error checking image quality: {str(e)}")
+        return False
+
 @app.head("/")
 async def head_root():
     logger.info("HEAD request received for /")
@@ -238,17 +248,17 @@ async def index(request: Request, image: UploadFile = File(None)):
         logger.info("Attempting to open image for OCR")
         img = Image.open(image_path).convert('L')
 
-        # ======= Nouveau pipeline de traitement pour images floues =======
+        # Vérification de la qualité de l'image
+        if not check_image_quality(img):
+            error = "L'image est trop floue pour être traitée"
+            logger.error(error)
+            return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true&image_path={quote(image_path)}", status_code=303)
+
+        # Pipeline de traitement pour images floues
         cv_img = np.array(img)
-
-        # Réduction du bruit
         cv_img = cv2.bilateralFilter(cv_img, d=9, sigmaColor=75, sigmaSpace=75)
-
-        # Défloutage (unsharp mask)
         gaussian = cv2.GaussianBlur(cv_img, (0, 0), 3)
         unsharp_img = cv2.addWeighted(cv_img, 1.5, gaussian, -0.5, 0)
-
-        # Binarisation adaptative
         thresh = cv2.adaptiveThreshold(
             unsharp_img,
             255,
@@ -257,15 +267,18 @@ async def index(request: Request, image: UploadFile = File(None)):
             31,
             2
         )
-
         img = Image.fromarray(thresh)
         img = ImageEnhance.Contrast(img).enhance(2.0)
-        # ===============================================================
+        logger.info("Image preprocessed successfully")
 
-        logger.info("Image opened and preprocessed successfully")
         raw_text = pytesseract.image_to_string(img, lang="eng+fra", config="--psm 6")
         logger.debug(f"Raw extracted text: {raw_text}")
         
+        if not raw_text.strip():
+            error = "Aucun texte détecté dans l'image"
+            logger.error(error)
+            return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true&image_path={quote(image_path)}", status_code=303)
+
         profiler = cProfile.Profile()
         profiler.enable()
         start_time = time.time()
@@ -281,6 +294,7 @@ async def index(request: Request, image: UploadFile = File(None)):
     except Exception as e:
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
         logger.error(error)
+        return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true&image_path={quote(image_path)}", status_code=303)
 
     query_params = []
     if extracted_text:
