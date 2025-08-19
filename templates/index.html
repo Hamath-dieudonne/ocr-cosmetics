@@ -103,7 +103,7 @@
             width: 100%;
             max-width: 600px;
         }
-        #cameraModal video, #cameraModal img {
+        #cameraModal img {
             width: 100%;
             height: auto;
             max-height: 80vh;
@@ -210,6 +210,7 @@
                                 Drag and drop an image here
                             </p>
                             <input type="file" id="image" name="image" accept="image/*" class="hidden" aria-hidden="true" />
+                            <input type="file" id="nativeCameraInput" accept="image/*" capture="environment" style="display:none;" aria-hidden="true" />
                             <div id="previewContainer" class="preview-container mt-6 w-full hidden">
                                 <img id="imagePreview" src="#" alt="Aperçu de l'image" />
                             </div>
@@ -237,28 +238,20 @@
     <div id="cameraModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50" role="dialog" aria-labelledby="modalTitle">
         <div class="modal-content p-4">
             <span id="closeModal" class="close-btn absolute top-2 right-2 text-xl font-bold" aria-label="Fermer la modale">×</span>
-            <button id="toggleCropButton" class="absolute top-2 left-2 text-xl font-bold bg-white rounded-full w-10 h-10 flex items-center justify-center shadow-md" aria-label="Activer/Désactiver le rognage" style="display: none;">
-                <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 3h18v18H3V3zm2 2v14h14V5H5z" />
-                    <path d="M9 3v6h6V3M15 21v-6h-6v6M3 9h6v6H3M21 15h-6v-6h6" />
-                </svg>
-            </button>
             <h2 id="modalTitle" class="sr-only">Rogner l'image</h2>
-            <video id="cameraStream" autoplay playsinline style="display: none;"></video>
-            <canvas id="captureCanvas" style="display: none;"></canvas>
             <div id="cropView" class="hidden">
                 <img id="capturedImage" alt="Photo à rogner">
             </div>
             <div class="modal-buttons mt-4">
-                <button id="capturePhoto" class="confirm-btn" style="display: none;" aria-label="Capturer la photo">Capture</button>
-                <button id="savePhoto" class="confirm-btn" style="display: none;" aria-label="Sauvegarder l'image">Save</button>
-                <button id="cropCancel" class="cancel-btn" aria-label="Annuler">Cancel</button>
+                <button id="cropConfirm" class="confirm-btn" aria-label="Confirmer le rognage">Confirm</button>
+                <button id="cropCancel" class="cancel-btn" aria-label="Annuler le rognage">Cancel</button>
             </div>
         </div>
     </div>
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('image');
+        const nativeCameraInput = document.getElementById('nativeCameraInput');
         const previewContainer = document.getElementById('previewContainer');
         const imagePreview = document.getElementById('imagePreview');
         const uploadButton = document.getElementById('uploadButton');
@@ -273,15 +266,10 @@
         const closeModal = document.getElementById('closeModal');
         const cropView = document.getElementById('cropView');
         const capturedImage = document.getElementById('capturedImage');
-        const cameraStream = document.getElementById('cameraStream');
-        const captureCanvas = document.getElementById('captureCanvas');
-        const capturePhoto = document.getElementById('capturePhoto');
-        const savePhoto = document.getElementById('savePhoto');
+        const cropConfirm = document.getElementById('cropConfirm');
         const cropCancel = document.getElementById('cropCancel');
-        const toggleCropButton = document.getElementById('toggleCropButton');
         let cropper = null;
-        let isCropping = false;
-        let stream = null;
+
         let feedbackQueue = [];
         let isShowingFeedback = false;
 
@@ -427,193 +415,100 @@
             fileInput.click();
         });
 
-        async function startCamera() {
-            try {
-                console.log('Starting camera with getUserMedia');
-                const constraints = {
-                    video: {
-                        facingMode: 'environment',
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    }
-                };
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
-                cameraStream.srcObject = stream;
-                cameraStream.style.display = 'block';
-                capturePhoto.style.display = 'block';
-                savePhoto.style.display = 'none';
-                toggleCropButton.style.display = 'none';
-                cropView.style.display = 'none';
-                cameraModal.classList.remove('hidden');
-                setTimeout(() => cameraModal.classList.add('show'), 10);
-                console.log('Camera stream started, video dimensions:', cameraStream.videoWidth, cameraStream.videoHeight);
-            } catch (err) {
-                console.error('Error accessing camera:', err);
-                showFeedback('Erreur lors de l\'accès à la caméra. Veuillez vérifier les permissions.', true);
-                closeCameraModal();
-            }
-        }
-
         takePhotoButton.addEventListener('click', () => {
-            console.log('Take Photo button clicked');
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                showFeedback('La caméra n\'est pas supportée par ce navigateur.', true);
+            nativeCameraInput.click();
+        });
+
+        nativeCameraInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!file.type.startsWith('image/')) {
+                showFeedback('Veuillez sélectionner une image valide.', true);
                 return;
             }
-            startCamera();
-        });
-
-        capturePhoto.addEventListener('click', () => {
-            console.log('Capture photo clicked');
-            try {
-                // Attendre que la vidéo soit prête
-                if (!cameraStream.videoWidth || !cameraStream.videoHeight) {
-                    console.error('Video stream not ready');
-                    showFeedback('La vidéo n\'est pas prête. Veuillez réessayer.', true);
-                    return;
-                }
-                // Définir les dimensions du canvas
-                captureCanvas.width = cameraStream.videoWidth;
-                captureCanvas.height = cameraStream.videoHeight;
-                console.log('Canvas set to:', captureCanvas.width, 'x', captureCanvas.height);
-                const context = captureCanvas.getContext('2d', { willReadFrequently: true });
-                // Dessiner l'image de la vidéo sur le canvas
-                context.drawImage(cameraStream, 0, 0, captureCanvas.width, captureCanvas.height);
-                console.log('Image drawn on canvas');
-                // Convertir en Data URL
-                const dataUrl = captureCanvas.toDataURL('image/jpeg', 1.0);
-                console.log('Data URL created, length:', dataUrl.length);
-                // Assigner au capturedImage
-                capturedImage.src = dataUrl;
-                capturedImage.onload = () => {
-                    console.log('Captured image loaded in cropView');
-                    // Masquer le flux vidéo et afficher l'image capturée
-                    cameraStream.style.display = 'none';
-                    capturePhoto.style.display = 'none';
-                    cropView.classList.remove('hidden');
-                    toggleCropButton.style.display = 'block';
-                    savePhoto.style.display = 'block';
-                    // Arrêter le flux vidéo
-                    if (stream) {
-                        stream.getTracks().forEach(track => track.stop());
-                        stream = null;
-                        console.log('Camera stream stopped');
-                    }
-                };
-                capturedImage.onerror = () => {
-                    console.error('Error loading captured image');
-                    showFeedback('Erreur lors du chargement de l\'image capturée.', true);
-                };
-            } catch (err) {
-                console.error('Error capturing photo:', err);
-                showFeedback('Erreur lors de la capture de la photo.', true);
-            }
-        });
-
-        toggleCropButton.addEventListener('click', () => {
-            isCropping = !isCropping;
-            console.log('Toggling crop mode:', isCropping);
-            if (isCropping) {
-                if (cropper) cropper.destroy();
-                cropper = new Cropper(capturedImage, {
-                    aspectRatio: NaN,
-                    viewMode: 1,
-                    autoCropArea: 0.8,
-                    responsive: true,
-                    zoomable: true,
-                    scalable: true,
-                    movable: false,
-                    minCropBoxWidth: 100,
-                    minCropBoxHeight: 100,
-                    background: false,
-                    cropBoxMovable: false,
-                    cropBoxResizable: true,
-                    dragMode: 'none',
-                });
-                toggleCropButton.querySelector('svg').style.stroke = '#9642ea';
-            } else {
-                if (cropper) {
-                    cropper.destroy();
-                    cropper = null;
-                }
-                toggleCropButton.querySelector('svg').style.stroke = 'currentColor';
-            }
-        });
-
-        savePhoto.addEventListener('click', () => {
-            console.log('Save photo clicked, cropping:', isCropping);
-            try {
-                let blob;
-                if (isCropping && cropper) {
-                    const croppedCanvas = cropper.getCroppedCanvas({
-                        fillColor: '#fff',
-                        imageSmoothingQuality: 'high',
-                    });
-                    croppedCanvas.toBlob(
-                        (b) => {
-                            blob = b;
-                            console.log('Cropped image blob size:', blob.size);
-                            saveImage(blob);
-                        },
-                        'image/jpeg',
-                        1.0
-                    );
-                } else {
-                    captureCanvas.toBlob(
-                        (b) => {
-                            blob = b;
-                            console.log('Original image blob size:', blob.size);
-                            saveImage(blob);
-                        },
-                        'image/jpeg',
-                        1.0
-                    );
-                }
-            } catch (err) {
-                console.error('Error saving photo:', err);
-                showFeedback('Erreur lors de la sauvegarde de la photo.', true);
-            }
-        });
-
-        function saveImage(blob) {
-            if (blob.size > 10 * 1024 * 1024) {
+            if (file.size > 10 * 1024 * 1024) {
                 showFeedback('L\'image est trop volumineuse (limite : 10 Mo).', true);
-                closeCameraModal();
                 return;
             }
-            const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
-            const dataTransfer = new DataTransfer();
-            dataTransfer.items.add(file);
-            fileInput.files = dataTransfer.files;
-            console.log('Image saved to fileInput, file size:', file.size);
 
-            const url = URL.createObjectURL(blob);
-            imagePreview.src = url;
-            previewContainer.classList.remove('hidden');
-            dropText.classList.add('hidden');
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                capturedImage.src = e.target.result;
+                capturedImage.onload = () => {
+                    cameraModal.classList.remove('hidden');
+                    setTimeout(() => cameraModal.classList.add('show'), 10);
+                    cropView.classList.remove('hidden');
 
-            closeCameraModal();
-
-            imagePreview.onload = () => {
-                URL.revokeObjectURL(url);
-                imagePreview.onload = null;
+                    if (cropper) cropper.destroy();
+                    cropper = new Cropper(capturedImage, {
+                        aspectRatio: NaN,
+                        viewMode: 1,
+                        autoCropArea: 0.8,
+                        responsive: true,
+                        zoomable: true,
+                        scalable: true,
+                        movable: false,
+                        minCropBoxWidth: 100,
+                        minCropBoxHeight: 100,
+                        background: false,
+                        cropBoxMovable: false,
+                        cropBoxResizable: true,
+                        dragMode: 'none',
+                    });
+                };
             };
-            updateClearButtonState();
-        }
+            reader.onerror = () => {
+                showFeedback('Erreur lors de la lecture de l\'image.', true);
+            };
+            reader.readAsDataURL(file);
+        });
 
-        cropCancel.addEventListener('click', closeCameraModal);
+        cropConfirm.addEventListener('click', () => {
+            if (!cropper) return;
+
+            const croppedCanvas = cropper.getCroppedCanvas({
+                fillColor: '#fff',
+                imageSmoothingQuality: 'high',
+                width: 1920,
+                height: 1080,
+            });
+
+            croppedCanvas.toBlob((blob) => {
+                const file = new File([blob], 'photo_cropped.jpg', { type: 'image/jpeg' });
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                fileInput.files = dataTransfer.files;
+
+                const url = URL.createObjectURL(blob);
+                imagePreview.src = url;
+                previewContainer.classList.remove('hidden');
+                dropText.classList.add('hidden');
+
+                closeCameraModal();
+
+                imagePreview.onload = () => {
+                    URL.revokeObjectURL(url);
+                    imagePreview.onload = null;
+                };
+                updateClearButtonState();
+            }, 'image/jpeg', 0.8);
+        });
+
+        cropCancel.addEventListener('click', () => {
+            if (cropper) cropper.destroy();
+            cropper = null;
+            closeCameraModal();
+        });
 
         closeModal.addEventListener('click', closeCameraModal);
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && !cameraModal.classList.contains('hidden')) {
-                console.log('Escape key pressed, closing modal');
                 closeCameraModal();
             }
         });
 
         function closeCameraModal() {
-            console.log('Closing camera modal');
             cameraModal.classList.remove('show');
             setTimeout(() => {
                 cameraModal.classList.add('hidden');
@@ -621,18 +516,6 @@
                     cropper.destroy();
                     cropper = null;
                 }
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                }
-                cameraStream.style.display = 'none';
-                capturePhoto.style.display = 'none';
-                savePhoto.style.display = 'none';
-                toggleCropButton.style.display = 'none';
-                isCropping = false;
-                toggleCropButton.querySelector('svg').style.stroke = 'currentColor';
-                cropView.classList.add('hidden');
-                capturedImage.src = '';
             }, 300);
         }
 
@@ -643,7 +526,7 @@
                     const response = await fetch('/delete_image', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image_path: imagePath }),
+                        body: JSON.stringify({ image_path: imagePath })
                     });
                     const result = await response.json();
                     if (result.message) {
@@ -659,6 +542,7 @@
                 }
             }
             fileInput.value = '';
+            nativeCameraInput.value = '';
             hideLoader();
             const existingResults = document.getElementById('resultsContainer');
             const existingError = document.getElementById('errorMessage');
@@ -680,15 +564,12 @@
             extractButton.classList.add('opacity-50', 'cursor-not-allowed');
 
             const formData = new FormData(form);
-            console.log('Submitting form, file:', fileInput.files[0]?.name, 'size:', fileInput.files[0]?.size);
             try {
                 const response = await fetch('/', {
                     method: 'POST',
-                    body: formData,
+                    body: formData
                 });
-                console.log('Backend response status:', response.status);
                 const result = await response.json();
-                console.log('Backend response data:', result);
                 hideLoader();
                 extractButton.disabled = false;
                 extractButton.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -699,16 +580,15 @@
                     resultsContainer.innerHTML = `<div class="inci-text text-[#141118] text-sm sm:text-base font-normal leading-normal pb-3 pt-1 px-4">${result.extracted_text}</div>`;
                     form.appendChild(resultsContainer);
                 } else if (result.error) {
-                    showFeedback(`Erreur: ${result.error}`, true);
+                    showFeedback(result.error, true);
                 } else {
                     showFeedback('Aucun ingrédient détecté', false);
                 }
             } catch (err) {
-                console.error('Extraction error:', err);
                 hideLoader();
                 extractButton.disabled = false;
                 extractButton.classList.remove('opacity-50', 'cursor-not-allowed');
-                showFeedback(`Erreur lors de l'extraction des ingrédients: ${err.message}`, true);
+                showFeedback('Erreur lors de l\'extraction des ingrédients', true);
             }
         });
     </script>
