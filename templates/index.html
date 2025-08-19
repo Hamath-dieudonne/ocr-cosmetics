@@ -446,7 +446,7 @@
                 cropView.style.display = 'none';
                 cameraModal.classList.remove('hidden');
                 setTimeout(() => cameraModal.classList.add('show'), 10);
-                console.log('Camera stream started');
+                console.log('Camera stream started, video dimensions:', cameraStream.videoWidth, cameraStream.videoHeight);
             } catch (err) {
                 console.error('Error accessing camera:', err);
                 showFeedback('Erreur lors de l\'accès à la caméra. Veuillez vérifier les permissions.', true);
@@ -465,21 +465,49 @@
 
         capturePhoto.addEventListener('click', () => {
             console.log('Capture photo clicked');
-            const context = captureCanvas.getContext('2d');
-            captureCanvas.width = cameraStream.videoWidth;
-            captureCanvas.height = cameraStream.videoHeight;
-            context.drawImage(cameraStream, 0, 0, captureCanvas.width, captureCanvas.height);
-            capturedImage.src = captureCanvas.toDataURL('image/jpeg', 1.0);
-            cameraStream.style.display = 'none';
-            capturePhoto.style.display = 'none';
-            cropView.classList.remove('hidden');
-            toggleCropButton.style.display = 'block';
-            savePhoto.style.display = 'block';
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
+            try {
+                // Attendre que la vidéo soit prête
+                if (!cameraStream.videoWidth || !cameraStream.videoHeight) {
+                    console.error('Video stream not ready');
+                    showFeedback('La vidéo n\'est pas prête. Veuillez réessayer.', true);
+                    return;
+                }
+                // Définir les dimensions du canvas
+                captureCanvas.width = cameraStream.videoWidth;
+                captureCanvas.height = cameraStream.videoHeight;
+                console.log('Canvas set to:', captureCanvas.width, 'x', captureCanvas.height);
+                const context = captureCanvas.getContext('2d', { willReadFrequently: true });
+                // Dessiner l'image de la vidéo sur le canvas
+                context.drawImage(cameraStream, 0, 0, captureCanvas.width, captureCanvas.height);
+                console.log('Image drawn on canvas');
+                // Convertir en Data URL
+                const dataUrl = captureCanvas.toDataURL('image/jpeg', 1.0);
+                console.log('Data URL created, length:', dataUrl.length);
+                // Assigner au capturedImage
+                capturedImage.src = dataUrl;
+                capturedImage.onload = () => {
+                    console.log('Captured image loaded in cropView');
+                    // Masquer le flux vidéo et afficher l'image capturée
+                    cameraStream.style.display = 'none';
+                    capturePhoto.style.display = 'none';
+                    cropView.classList.remove('hidden');
+                    toggleCropButton.style.display = 'block';
+                    savePhoto.style.display = 'block';
+                    // Arrêter le flux vidéo
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                        stream = null;
+                        console.log('Camera stream stopped');
+                    }
+                };
+                capturedImage.onerror = () => {
+                    console.error('Error loading captured image');
+                    showFeedback('Erreur lors du chargement de l\'image capturée.', true);
+                };
+            } catch (err) {
+                console.error('Error capturing photo:', err);
+                showFeedback('Erreur lors de la capture de la photo.', true);
             }
-            console.log('Photo captured, ready for cropping');
         });
 
         toggleCropButton.addEventListener('click', () => {
@@ -514,31 +542,36 @@
 
         savePhoto.addEventListener('click', () => {
             console.log('Save photo clicked, cropping:', isCropping);
-            let blob;
-            if (isCropping && cropper) {
-                const croppedCanvas = cropper.getCroppedCanvas({
-                    fillColor: '#fff',
-                    imageSmoothingQuality: 'high',
-                });
-                croppedCanvas.toBlob(
-                    (b) => {
-                        blob = b;
-                        console.log('Cropped image blob size:', blob.size);
-                        saveImage(blob);
-                    },
-                    'image/jpeg',
-                    1.0
-                );
-            } else {
-                captureCanvas.toBlob(
-                    (b) => {
-                        blob = b;
-                        console.log('Original image blob size:', blob.size);
-                        saveImage(blob);
-                    },
-                    'image/jpeg',
-                    1.0
-                );
+            try {
+                let blob;
+                if (isCropping && cropper) {
+                    const croppedCanvas = cropper.getCroppedCanvas({
+                        fillColor: '#fff',
+                        imageSmoothingQuality: 'high',
+                    });
+                    croppedCanvas.toBlob(
+                        (b) => {
+                            blob = b;
+                            console.log('Cropped image blob size:', blob.size);
+                            saveImage(blob);
+                        },
+                        'image/jpeg',
+                        1.0
+                    );
+                } else {
+                    captureCanvas.toBlob(
+                        (b) => {
+                            blob = b;
+                            console.log('Original image blob size:', blob.size);
+                            saveImage(blob);
+                        },
+                        'image/jpeg',
+                        1.0
+                    );
+                }
+            } catch (err) {
+                console.error('Error saving photo:', err);
+                showFeedback('Erreur lors de la sauvegarde de la photo.', true);
             }
         });
 
@@ -599,6 +632,7 @@
                 isCropping = false;
                 toggleCropButton.querySelector('svg').style.stroke = 'currentColor';
                 cropView.classList.add('hidden');
+                capturedImage.src = '';
             }, 300);
         }
 
