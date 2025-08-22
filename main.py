@@ -259,6 +259,17 @@ async def index(request: Request, image: UploadFile = File(None)):
         img = Image.fromarray(thresh)
         # ===============================================================
 
+        cv_img = np.array(img)
+
+        # Vérification de la netteté avec la variance du gradient de Laplacian
+        laplacian_var = cv2.Laplacian(cv_img, cv2.CV_64F).var()
+        logger.debug(f"Laplacian variance (sharpness): {laplacian_var}")
+        SHARPNESS_THRESHOLD = 100.0  # Ajustez ce seuil selon vos besoins
+        if laplacian_var < SHARPNESS_THRESHOLD:
+            error = "The image is too blurry. Please upload a clearer image.."
+            logger.warning(error)
+            return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true", status_code=303)
+
         logger.info("Image opened and preprocessed successfully")
         raw_text = pytesseract.image_to_string(img, lang="eng+fra", config="--psm 6")
         logger.debug(f"Raw extracted text: {raw_text}")
