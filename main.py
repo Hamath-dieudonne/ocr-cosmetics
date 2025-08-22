@@ -8,7 +8,7 @@ from urllib.parse import quote
 from collections import Counter, defaultdict
 
 import pandas as pd
-from PIL import Image, ImageEnhance
+from PIL import Image
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 from functools import lru_cache
@@ -26,7 +26,7 @@ from rapidfuzz import process, fuzz
 
 import pytesseract
 import cv2
-import numpy as np
+import numpy as np  # <-- Pour traitement d'image
 
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG)
@@ -39,7 +39,7 @@ templates = Jinja2Templates(directory="templates")
 
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-MAX_FILE_SIZE = 10 * 1024 * 1024  # Augmenté à 10 Mo pour correspondre au frontend
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 SEPARATOR_RE = re.compile(r'[;*+\»]+')
 CLEAN_INGREDIENT_RE = re.compile(r'[^a-zA-Z0-9\s-]')
@@ -180,16 +180,6 @@ def process_inci_list(raw_text: str) -> str:
     final_ingredients = [match[0][0].title() if match != "NF" else ing for ing, match in zip(unique_ingredients, results)]
     return ', '.join(final_ingredients) if final_ingredients else "Aucun ingrédient détecté"
 
-def check_image_quality(img: Image.Image) -> bool:
-    try:
-        cv_img = np.array(img)
-        laplacian = cv2.Laplacian(cv_img, cv2.CV_64F).var()
-        logger.debug(f"Image quality (Laplacian variance): {laplacian}")
-        return laplacian > 100  # Seuil pour détecter les images floues
-    except Exception as e:
-        logger.error(f"Error checking image quality: {str(e)}")
-        return False
-
 @app.head("/")
 async def head_root():
     logger.info("HEAD request received for /")
@@ -248,37 +238,31 @@ async def index(request: Request, image: UploadFile = File(None)):
         logger.info("Attempting to open image for OCR")
         img = Image.open(image_path).convert('L')
 
-        # Vérification de la qualité de l'image
-        if not check_image_quality(img):
-            error = "L'image est trop floue pour être traitée"
-            logger.error(error)
-            return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true&image_path={quote(image_path)}", status_code=303)
-
-        # Pipeline de traitement pour images floues
+        # ======= Pipeline OCR optimisé pour temps réel =======
         cv_img = np.array(img)
-        cv_img = cv2.bilateralFilter(cv_img, d=9, sigmaColor=75, sigmaSpace=75)
-        gaussian = cv2.GaussianBlur(cv_img, (0, 0), 3)
-        unsharp_img = cv2.addWeighted(cv_img, 1.5, gaussian, -0.5, 0)
-        thresh = cv2.adaptiveThreshold(
-            unsharp_img,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            31,
-            2
-        )
-        img = Image.fromarray(thresh)
-        img = ImageEnhance.Contrast(img).enhance(2.0)
-        logger.info("Image preprocessed successfully")
 
+        # 🔍 Si l'image est trop petite → agrandir x2 pour améliorer l'OCR
+        if cv_img.shape[1] < 1000:  # largeur < 1000px
+            cv_img = cv2.resize(cv_img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+
+        # Réduction de bruit rapide
+        cv_img = cv2.medianBlur(cv_img, 3)
+
+        # Égalisation adaptative du contraste
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        cv_img = clahe.apply(cv_img)
+
+        # Binarisation (Otsu)
+        _, thresh = cv2.threshold(cv_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Conversion en PIL pour Tesseract
+        img = Image.fromarray(thresh)
+        # ===============================================================
+
+        logger.info("Image opened and preprocessed successfully")
         raw_text = pytesseract.image_to_string(img, lang="eng+fra", config="--psm 6")
         logger.debug(f"Raw extracted text: {raw_text}")
         
-        if not raw_text.strip():
-            error = "Aucun texte détecté dans l'image"
-            logger.error(error)
-            return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true&image_path={quote(image_path)}", status_code=303)
-
         profiler = cProfile.Profile()
         profiler.enable()
         start_time = time.time()
@@ -294,7 +278,6 @@ async def index(request: Request, image: UploadFile = File(None)):
     except Exception as e:
         error = f"Erreur lors de l'extraction des ingrédients : {str(e)}"
         logger.error(error)
-        return RedirectResponse(url=f"/?error={quote(error)}&has_submitted=true&image_path={quote(image_path)}", status_code=303)
 
     query_params = []
     if extracted_text:
