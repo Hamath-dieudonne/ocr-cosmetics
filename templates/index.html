@@ -88,32 +88,76 @@
             transition: opacity 0.3s ease, transform 0.3s ease;
             transform: scale(0.9);
             opacity: 0;
+            z-index: 9999;
         }
         #cameraModal.show {
             transform: scale(1);
             opacity: 1;
         }
         #cameraModal .modal-content {
-            background: #fff;
-            border-radius: 20px;
+            background: #ffffff;
+            border-radius: 12px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            max-height: 80vh;
-            overflow-y: auto;
+            max-height: 95vh;
+            max-width: 95vw;
+            overflow: hidden;
+            padding: 0;
             position: relative;
             width: 100%;
-            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
         }
-        #cameraModal video, #cameraModal img {
+
+        #cameraModal video {
             width: 100%;
             height: auto;
             border-radius: 10px;
         }
-        #cameraModal .cropper-container {
-            margin: 0 auto;
-            max-height: 400px;
-            border-radius: 10px;
+
+        #cropView {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
             overflow: hidden;
         }
+
+        .cropper-wrapper {
+            flex: 1;
+            height: calc(95vh - 140px); /* Espace pour les boutons + padding */
+            overflow: hidden;
+            position: relative;
+            width: 100%;
+            min-height: 300px;
+        }
+
+        #cropView img {
+            display: block;
+            height: auto;
+            max-width: 100%;
+        }
+
+        #cropView .modal-buttons {
+            background: #ffffff;
+            border-top: 1px solid #e5e5e5;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            padding: 16px 20px;
+            width: 100%;
+            flex-shrink: 0; /* Empêche la compression */
+        }
+
+        #cameraModal .cropper-container {
+            margin: 0 auto;
+            border-radius: 10px;
+            overflow: hidden;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
         #cameraModal .cropper-crop-box {
             border: 2px solid #9642ea;
             border-radius: 8px;
@@ -142,7 +186,8 @@
             display: flex;
             justify-content: space-between;
             gap: 10px;
-            padding: 10px 0;
+            padding: 16px 20px;
+            background: #ffffff;
         }
         #cameraModal .modal-buttons button {
             flex: 1;
@@ -150,13 +195,15 @@
             border-radius: 25px;
             font-weight: 600;
             transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
         }
         #cameraModal .modal-buttons .confirm-btn {
             background-color: #9642ea;
             color: #fff;
         }
         #cameraModal .modal-buttons .confirm-btn:hover {
-            background-color: #9642ea;
+            background-color: #7c2fd4;
         }
         #cameraModal .modal-buttons .cancel-btn {
             background-color: #f0f0f0;
@@ -168,75 +215,25 @@
         #cameraModal .modal-buttons .capture-btn {
             background-color: #fff;         
             border: 4px solid #ccc;         
-            border-radius: 50%;             /* rond parfait */
+            border-radius: 50%;
             width: 70px;                    
             height: 70px;                   
-            padding: 0;                     /* évite l’ovale */
+            padding: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            line-height: 0;                 /* évite d’étirer le bouton */
+            line-height: 0;
             margin: 0 auto;
             box-shadow: 0 0 6px rgba(0,0,0,0.3);
+            cursor: pointer;
         }
         #cameraModal .modal-buttons .capture-btn svg {
             width: 28px; 
             height: 28px;
         }
-
         #cameraModal .modal-buttons .capture-btn:hover {
-            background-color: #f0f0f0;      /* gris clair au hover */
+            background-color: #f0f0f0;
         }
-        #cameraModal .modal-content {
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            max-height: 95vh;
-            max-width: 95vw;
-            overflow-y: auto;
-            padding: 0;
-            position: relative;
-            width: 100%;
-            display: flex;
-            flex-direction: column; /* Changed to column for vertical stacking */
-            justify-content: flex-start; /* Start from top */
-            align-items: stretch; /* Stretch children to full width */
-        }
-
-        #cropView {
-            display: flex;
-            flex-direction: column;
-            height: auto;
-            width: 100%;
-        }
-
-        .cropper-wrapper {
-            flex: 1; /* Take available space */
-            max-height: calc(95vh - 120px); /* Adjust based on buttons height (~60px) + margins/padding (~60px); tweak as needed */
-            overflow: hidden;
-            position: relative;
-            width: 100%;
-        }
-
-        #cropView img {
-            display: block;
-            height: auto;
-            max-width: 100%;
-        }
-
-        #cropView .modal-buttons {
-            background: rgba(255, 255, 255, 0.85);
-            border-radius: 12px;
-            display: flex;
-            gap: 12px;
-            justify-content: center; /* Center buttons horizontally */
-            margin-top: 10px; /* Space above buttons */
-            padding: 6px 14px;
-            width: 100%;
-            /* Removed: position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); */
-        }
-
-
 
         #cameraModal .close-btn {
             background-color: #fff;
@@ -248,9 +245,28 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 10;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
         }
         #cameraModal .close-btn:hover {
             background-color: #f0f0f0;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .cropper-wrapper {
+                height: calc(95vh - 120px);
+            }
+            #cameraModal .modal-content {
+                max-width: 98vw;
+                max-height: 98vh;
+            }
         }
     </style>
 </head>
@@ -260,7 +276,7 @@
             <div class="flex items-center gap-2 sm:gap-4 text-[#141118]">
                 <div class="size-4">
                     <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <!-- SVG path inchangé -->
+                        <path d="M24 4L29.2 14.4L41 14.4L31.9 21.2L37.1 31.6L24 24.8L10.9 31.6L16.1 21.2L7 14.4L18.8 14.4L24 4Z" fill="currentColor"/>
                     </svg>
                 </div>
                 <h2 class="text-[#141118] text-base sm:text-lg font-bold leading-tight tracking-[-0.015em] header-title">Cosmetic Ingredient Extractor</h2>
@@ -296,12 +312,12 @@
                             />
                             <div
                                 id="previewContainer"
-                                class="preview-container mt-6 w-full {% if not image_path %}hidden{% endif %}"
+                                class="preview-container mt-6 w-full hidden"
                             >
                                 <img
                                     id="imagePreview"
-                                    src="{% if image_path %}/{{ image_path }}{% else %}#{% endif %}"
-                                    data-image-path="{% if image_path %}{{ image_path }}{% endif %}"
+                                    src="#"
+                                    data-image-path=""
                                     alt="Aperçu de l'image"
                                 />
                             </div>
@@ -332,28 +348,12 @@
                                 id="clearImageButton"
                                 type="button"
                                 class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#f2f0f4] text-[#141118] text-sm font-bold leading-normal tracking-[0.015em]"
-                                data-image-path="{% if image_path %}{{ image_path }}{% endif %}"
+                                data-image-path=""
                             >
                                 <span>Clear Image</span>
                             </button>
                         </div>
                         <p id="feedbackMessage" class="feedback-message hidden text-center text-sm font-normal leading-normal pb-3 pt-1 px-4 text-[#756388]"></p>
-                        {% if extracted_text %}
-                        <div id="resultsContainer" class="flex flex-col gap-3 p-4">
-                            <div class="inci-text text-[#141118] text-sm sm:text-base font-normal leading-normal pb-3 pt-1 px-4">
-                                {{ extracted_text }}
-                            </div>
-                        </div>
-                        {% elif has_submitted and not error %}
-                        <p id="noResultsMessage" class="text-[#756388] text-sm font-normal leading-normal pb-3 pt-1 px-4">
-                            Aucun ingrédient détecté
-                        </p>
-                        {% endif %}
-                        {% if error %}
-                        <p id="errorMessage" class="text-[#756388] text-sm font-normal leading-normal pb-3 pt-1 px-4">
-                            {{ error }}
-                        </p>
-                        {% endif %}
                     </form>
                 </div>
             </div>
@@ -362,13 +362,13 @@
 
     <!-- Modal for camera and crop -->
     <div id="cameraModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="modal-content p-4">
-            <button id="closeModal" class="close-btn absolute top-2 right-2 text-xl font-bold">×</button>
+        <div class="modal-content">
+            <button id="closeModal" class="close-btn">×</button>
             <div id="cameraView">
                 <video id="cameraVideo" autoplay playsinline></video>
-                <div class="modal-buttons mt-4">
+                <div class="modal-buttons">
                     <button id="capturePhoto" class="capture-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-6 h-6">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
@@ -379,7 +379,7 @@
                 <div class="cropper-wrapper">
                     <img id="capturedImage">
                 </div>
-                <div class="modal-buttons mt-4">
+                <div class="modal-buttons">
                     <button id="cropConfirm" class="confirm-btn">Confirm</button>
                     <button id="cropCancel" class="cancel-btn">Cancel</button>
                 </div>
@@ -388,6 +388,12 @@
     </div>
 
     <script>
+        // Variables globales
+        let stream = null;
+        let cropper = null;
+        let eventListenersAttached = false;
+
+        // Elements du DOM
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('image');
         const previewContainer = document.getElementById('previewContainer');
@@ -412,14 +418,7 @@
         const cropConfirm = document.getElementById('cropConfirm');
         const cropCancel = document.getElementById('cropCancel');
 
-        let stream;
-        let cropper;
-
-        if (!dropText) console.error('Erreur : #dropText non trouvé dans le DOM');
-        else console.log('dropText trouvé dans le DOM');
-        if (!loader) console.error('Erreur : #loader non trouvé dans le DOM');
-        else console.log('loader trouvé dans le DOM');
-
+        // Fonctions utilitaires
         function showFeedback(message, isError = false) {
             feedbackMessage.textContent = message;
             feedbackMessage.className = `feedback-message text-center text-sm font-normal leading-normal pb-3 pt-1 px-4 ${isError ? 'text-red-500' : 'text-[#756388]'}`;
@@ -433,7 +432,6 @@
                 dropText.classList.add('hidden');
                 if (!imagePreview.src || imagePreview.src === '#' || imagePreview.src.endsWith('#')) {
                     previewContainer.classList.add('hidden');
-                    console.log('Loader affiché, dropText et previewContainer masqués (pas d\'image)');
                 } else {
                     console.log('Loader affiché, dropText masqué, previewContainer reste visible');
                 }
@@ -446,71 +444,19 @@
                 if (!imagePreview.src || imagePreview.src === '#' || imagePreview.src.endsWith('#')) {
                     dropText.classList.remove('hidden');
                     previewContainer.classList.add('hidden');
-                    console.log('Loader masqué, dropText affiché, pas d\'image');
                 } else {
                     dropText.classList.add('hidden');
                     previewContainer.classList.remove('hidden');
-                    console.log('Loader masqué, dropText masqué, previewContainer affiché');
                 }
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const isLoading = urlParams.get('is_loading') === 'true';
-            const imagePath = urlParams.get('image_path');
-            if (isLoading) showLoader();
-            else hideLoader();
-            if (imagePath) {
-                const fullPath = '/' + imagePath + '?t=' + new Date().getTime();
-                imagePreview.src = fullPath;
-                imagePreview.setAttribute('data-image-path', imagePath);
-                previewContainer.classList.remove('hidden');
-                clearImageButton.setAttribute('data-image-path', imagePath);
-                console.log('Image path updated after redirection:', fullPath);
-            }
-            console.log('is_loading:', isLoading);
-        });
-
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('drag-over');
-            console.log('Drag over drop zone');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('drag-over');
-            console.log('Drag left drop zone');
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type.startsWith('image/')) {
-                showLoader();
-                fileInput.files = files;
-                previewImage(files[0]);
-            }
-            console.log('File dropped:', files.length > 0 ? files[0].name : 'No file');
-        });
-
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length > 0) {
-                showLoader();
-                previewImage(fileInput.files[0]);
-            }
-            console.log('File input changed:', fileInput.files.length > 0 ? fileInput.files[0].name : 'No file');
-        });
-
         function previewImage(file) {
-            console.log('Appel de previewImage pour le fichier :', file.name);
             const reader = new FileReader();
             reader.onload = (e) => {
                 imagePreview.src = e.target.result;
                 imagePreview.setAttribute('data-image-path', '');
                 hideLoader();
-                console.log('Image preview updated:', file.name);
             };
             reader.onerror = (e) => {
                 console.error('Erreur lors de la lecture du fichier :', e);
@@ -520,169 +466,292 @@
             reader.readAsDataURL(file);
         }
 
-        dropZone.addEventListener('click', (e) => {
-            if (
-                e.target.closest('button[type="submit"]') ||
-                e.target.closest('#clearImageButton') ||
-                e.target.closest('#takePhotoButton')
-            ) return;
-            fileInput.click();
-            console.log('Drop zone clicked to open file input');
-        });
-
-        uploadButton.addEventListener('click', () => {
-            fileInput.click();
-            console.log('Upload button clicked');
-        });
-
-        takePhotoButton.addEventListener('click', async () => {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                cameraVideo.srcObject = stream;
-                cameraModal.classList.remove('hidden');
-                setTimeout(() => cameraModal.classList.add('show'), 10);
-                cameraView.classList.remove('hidden');
-                cropView.classList.add('hidden');
-                console.log('Camera modal opened');
-            } catch (err) {
-                console.error('Error accessing camera:', err);
-                showFeedback('Impossible d\'accéder à la caméra. Veuillez vérifier les permissions.', true);
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                });
+                stream = null;
+                cameraVideo.srcObject = null;
             }
-        });
+        }
 
-        closeModal.addEventListener('click', () => {
-            closeCameraModal();
-            console.log("Modal fermé sans capture");
-        });
+        function destroyCropper() {
+            if (cropper) {
+                try {
+                    cropper.destroy();
+                } catch (e) {
+                    console.warn('Erreur lors de la destruction du cropper:', e);
+                }
+                cropper = null;
+            }
+        }
 
         function closeCameraModal() {
             cameraModal.classList.remove('show');
+            
             setTimeout(() => {
-                // Stoppe la caméra si active
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                }
+                // Arrête la caméra
+                stopCamera();
+                
                 // Cache le modal
                 cameraModal.classList.add('hidden');
-                // Détruit le cropper si il existe
-                if (cropper) {
-                    cropper.destroy();
-                    cropper = null;
-                }
+                
+                // Détruit le cropper
+                destroyCropper();
+                
                 // Réinitialise les vues
                 cameraView.classList.remove('hidden');
                 cropView.classList.add('hidden');
+                
+                // Nettoie l'image capturée
                 capturedImage.src = "";
-                console.log('Camera modal closed');
             }, 300);
         }
 
-
-        capturePhoto.addEventListener('click', () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = cameraVideo.videoWidth;
-            canvas.height = cameraVideo.videoHeight;
-            canvas.getContext('2d').drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
-            capturedImage.src = canvas.toDataURL('image/jpeg');
-            cameraView.classList.add('hidden');
-            cropView.classList.remove('hidden');
-
-            setTimeout(() => {
-                cropper = new Cropper(capturedImage, {
-                    aspectRatio: NaN,
-                    viewMode: 1,
-                    autoCropArea: 0.8,
-                    responsive: true,
-                    zoomable: true,
-                    scalable: true,
-                    movable: false,
-                    minCropBoxWidth: 100,
-                    minCropBoxHeight: 100,
-                    background: false,
-                    cropBoxMovable: false,
-                    cropBoxResizable: true,
-                    dragMode: 'none',
-                });
-                console.log('Cropper initialized');
-            }, 100);
-        });
-
-        cropConfirm.addEventListener('click', () => {
-            if (cropper) {
-                const croppedCanvas = cropper.getCroppedCanvas({
-                    fillColor: '#fff',
-                    imageSmoothingQuality: 'high',
-                });
-                croppedCanvas.toBlob((blob) => {
-                    const file = new File([blob], 'photo_cropped.jpg', { type: 'image/jpeg' });
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(file);
-                    fileInput.files = dataTransfer.files;
-                    previewImage(file);
-                    closeCameraModal();
-                    console.log('Cropped image confirmed and set');
-                }, 'image/jpeg', 0.95);
-            }
-        });
-
-        cropCancel.addEventListener('click', () => {
+        function resetCropView() {
+            // Destroy existing cropper
+            destroyCropper();
+            
+            // Clear the image
+            capturedImage.src = "";
+            
+            // Switch back to camera view
             cameraView.classList.remove('hidden');
             cropView.classList.add('hidden');
-            if (cropper) {
-                cropper.destroy();
-                cropper = null;
-            }
-            console.log('Crop cancelled, back to camera view');
-        });
+        }
 
-        clearImageButton.addEventListener('click', async () => {
-            console.log('Clear image clicked');
-            const imagePath = clearImageButton.getAttribute('data-image-path');
-            if (imagePath) {
+        // Event listeners
+        function attachEventListeners() {
+            if (eventListenersAttached) return;
+
+            // Drag & Drop events
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('drag-over');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].type.startsWith('image/')) {
+                    showLoader();
+                    fileInput.files = files;
+                    previewImage(files[0]);
+                }
+            });
+
+            // File input change
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length > 0) {
+                    showLoader();
+                    previewImage(fileInput.files[0]);
+                }
+            });
+
+            // Drop zone click
+            dropZone.addEventListener('click', (e) => {
+                if (
+                    e.target.closest('button[type="submit"]') ||
+                    e.target.closest('#clearImageButton') ||
+                    e.target.closest('#takePhotoButton')
+                ) return;
+                fileInput.click();
+            });
+
+            // Upload button
+            uploadButton.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            // Take photo button
+            takePhotoButton.addEventListener('click', async () => {
                 try {
-                    const response = await fetch('/delete_image', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image_path: imagePath })
+                    stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: 'environment' } 
                     });
-                    const result = await response.json();
-                    if (result.message) {
-                        console.log(result.message);
-                        showFeedback('Image supprimée avec succès');
-                        imagePreview.src = '#';
-                        previewContainer.classList.add('hidden');
-                        clearImageButton.setAttribute('data-image-path', '');
-                    } else {
-                        console.error(result.error);
+                    cameraVideo.srcObject = stream;
+                    cameraModal.classList.remove('hidden');
+                    setTimeout(() => cameraModal.classList.add('show'), 10);
+                    cameraView.classList.remove('hidden');
+                    cropView.classList.add('hidden');
+                } catch (err) {
+                    console.error('Error accessing camera:', err);
+                    showFeedback('Impossible d\'accéder à la caméra. Veuillez vérifier les permissions.', true);
+                }
+            });
+
+            // Close modal - FIXED
+            closeModal.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closeCameraModal();
+            });
+
+            // Capture photo
+            capturePhoto.addEventListener('click', () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = cameraVideo.videoWidth;
+                canvas.height = cameraVideo.videoHeight;
+                canvas.getContext('2d').drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+                capturedImage.src = canvas.toDataURL('image/jpeg');
+                
+                cameraView.classList.add('hidden');
+                cropView.classList.remove('hidden');
+
+                setTimeout(() => {
+                    try {
+                        cropper = new Cropper(capturedImage, {
+                            aspectRatio: NaN,
+                            viewMode: 1,
+                            autoCropArea: 0.8,
+                            responsive: true,
+                            zoomable: true,
+                            scalable: true,
+                            movable: false,
+                            minCropBoxWidth: 100,
+                            minCropBoxHeight: 100,
+                            background: false,
+                            cropBoxMovable: false,
+                            cropBoxResizable: true,
+                            dragMode: 'none',
+                        });
+                    } catch (e) {
+                        console.error('Erreur lors de l\'initialisation du cropper:', e);
+                        showFeedback('Erreur lors de l\'initialisation de l\'outil de recadrage', true);
+                    }
+                }, 100);
+            });
+
+            // Crop confirm
+            cropConfirm.addEventListener('click', () => {
+                if (cropper) {
+                    try {
+                        const croppedCanvas = cropper.getCroppedCanvas({
+                            fillColor: '#fff',
+                            imageSmoothingQuality: 'high',
+                        });
+                        croppedCanvas.toBlob((blob) => {
+                            const file = new File([blob], 'photo_cropped.jpg', { type: 'image/jpeg' });
+                            const dataTransfer = new DataTransfer();
+                            dataTransfer.items.add(file);
+                            fileInput.files = dataTransfer.files;
+                            previewImage(file);
+                            closeCameraModal();
+                        }, 'image/jpeg', 0.95);
+                    } catch (e) {
+                        console.error('Erreur lors du recadrage:', e);
+                        showFeedback('Erreur lors du recadrage de l\'image', true);
+                    }
+                }
+            });
+
+            // Crop cancel - FIXED
+            cropCancel.addEventListener('click', () => {
+                resetCropView();
+            });
+
+            // Clear image button
+            clearImageButton.addEventListener('click', async () => {
+                const imagePath = clearImageButton.getAttribute('data-image-path');
+                if (imagePath) {
+                    try {
+                        const response = await fetch('/delete_image', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image_path: imagePath })
+                        });
+                        const result = await response.json();
+                        if (result.message) {
+                            showFeedback('Image supprimée avec succès');
+                            imagePreview.src = '#';
+                            previewContainer.classList.add('hidden');
+                            clearImageButton.setAttribute('data-image-path', '');
+                        } else {
+                            console.error(result.error);
+                            showFeedback('Erreur lors de la suppression de l\'image', true);
+                        }
+                    } catch (err) {
+                        console.error('Error deleting image:', err);
                         showFeedback('Erreur lors de la suppression de l\'image', true);
                     }
-                } catch (err) {
-                    console.error('Error deleting image:', err);
-                    showFeedback('Erreur lors de la suppression de l\'image', true);
                 }
+                fileInput.value = '';
+                hideLoader();
+                
+                // Clean up existing results
+                const existingResults = document.getElementById('resultsContainer');
+                const existingError = document.getElementById('errorMessage');
+                const noResults = document.getElementById('noResultsMessage');
+                if (existingResults) existingResults.remove();
+                if (existingError) existingError.remove();
+                if (noResults) noResults.remove();
+            });
+
+            // Form submit
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                if (fileInput.files.length === 0) {
+                    showFeedback('Veuillez sélectionner une image', true);
+                    return;
+                }
+                showLoader();
+                extractButton.disabled = true;
+                extractButton.classList.add('opacity-50', 'cursor-not-allowed');
+                form.submit();
+            });
+
+            // Modal click outside to close
+            cameraModal.addEventListener('click', (e) => {
+                if (e.target === cameraModal) {
+                    closeCameraModal();
+                }
+            });
+
+            // Keyboard events
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !cameraModal.classList.contains('hidden')) {
+                    closeCameraModal();
+                }
+            });
+
+            eventListenersAttached = true;
+        }
+
+        // Initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isLoading = urlParams.get('is_loading') === 'true';
+            const imagePath = urlParams.get('image_path');
+            
+            if (isLoading) {
+                showLoader();
+            } else {
+                hideLoader();
             }
-            fileInput.value = '';
-            hideLoader();
-            const existingResults = document.getElementById('resultsContainer');
-            const existingError = document.getElementById('errorMessage');
-            const noResults = document.getElementById('noResultsMessage');
-            if (existingResults) existingResults.remove();
-            if (existingError) existingError.remove();
-            if (noResults) noResults.remove();
+            
+            if (imagePath) {
+                const fullPath = '/' + imagePath + '?t=' + new Date().getTime();
+                imagePreview.src = fullPath;
+                imagePreview.setAttribute('data-image-path', imagePath);
+                previewContainer.classList.remove('hidden');
+                clearImageButton.setAttribute('data-image-path', imagePath);
+                console.log('Image path updated after redirection:', fullPath);
+            }
+            
+            // Attach all event listeners
+            attachEventListeners();
         });
 
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            if (fileInput.files.length === 0) {
-                showFeedback('Veuillez sélectionner une image', true);
-                return;
-            }
-            showLoader();
-            extractButton.disabled = true;
-            extractButton.classList.add('opacity-50', 'cursor-not-allowed');
-            console.log('Formulaire soumis, loader affiché');
-            form.submit();
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopCamera();
+            destroyCropper();
         });
     </script>
 </body>
