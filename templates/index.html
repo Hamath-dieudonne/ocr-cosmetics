@@ -187,6 +187,18 @@
         #cameraModal .modal-buttons .capture-btn:hover {
             background-color: #f0f0f0;      /* gris clair au hover */
         }
+        #cameraModal .modal-content {
+            position: relative;
+            background: #000;          /* noir derrière pour bien voir l’image */
+            padding: 0;                /* enlève la grosse marge blanche */
+            border-radius: 12px;
+            max-width: 95vw;
+            max-height: 95vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
         #cropView {
             position: relative;
             width: 100%;
@@ -194,23 +206,26 @@
         }
 
         #cropView img {
-            width: 100%;         /* occupe toute la largeur */
-            height: auto;        /* garde le ratio */
             display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 0;          /* pas de coins blancs qui mangent l’image */
         }
 
         #cropView .modal-buttons {
             position: absolute;
-            bottom: 20px;        /* colle en bas du cropView */
+            bottom: 20px;              /* colle en bas */
             left: 50%;
             transform: translateX(-50%);
             display: flex;
             gap: 12px;
-            background: rgba(255, 255, 255, 0.85);
+            background: rgba(255, 255, 255, 0.85);  /* bande blanche translucide */
             padding: 6px 14px;
             border-radius: 12px;
             z-index: 10;
         }
+
+
 
 
         #cameraModal .close-btn {
