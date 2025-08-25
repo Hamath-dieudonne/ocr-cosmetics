@@ -166,21 +166,43 @@
             background-color: #e0e0e0;
         }
         #cameraModal .modal-buttons .capture-btn {
-            background-color: #fff;         /* blanc */
-            border: 4px solid #ccc;         /* contour gris clair */
-            color: #333;
-            border-radius: 50%;
-            width: 70px;
-            height: 70px;
+            background-color: #fff;         
+            border: 4px solid #ccc;         
+            border-radius: 50%;             /* rond parfait */
+            width: 70px;                    
+            height: 70px;                   
+            padding: 0;                     /* évite l’ovale */
             display: flex;
             align-items: center;
             justify-content: center;
+            line-height: 0;                 /* évite d’étirer le bouton */
             margin: 0 auto;
             box-shadow: 0 0 6px rgba(0,0,0,0.3);
         }
+        #cameraModal .modal-buttons .capture-btn svg {
+            width: 28px; 
+            height: 28px;
+        }
+
         #cameraModal .modal-buttons .capture-btn:hover {
             background-color: #f0f0f0;      /* gris clair au hover */
         }
+        #cropView .modal-buttons {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 20px;
+            padding: 6px 10px;
+            gap: 10px;
+            z-index: 10;
+            pointer-events: auto; /* clics actifs seulement sur les boutons */
+        }
+
+        #cropView .modal-buttons * {
+            pointer-events: auto; /* boutons cliquables */
+}
 
         #cameraModal .close-btn {
             background-color: #fff;
