@@ -294,13 +294,13 @@
                                 class="hidden"
                             />
                             <!-- Input dédié à la prise de photo (caméra arrière sur mobile) -->
-                            <input
+                            <!-- <input
                                 type="file"
                                 id="cameraInput"
                                 accept="image/*"
                                 capture="environment"
                                 class="hidden"
-                            />
+                            /> -->
 
                             <div
                                 id="previewContainer"
@@ -555,11 +555,14 @@
                 e.target.closest('#clearImageButton') ||
                 e.target.closest('#takePhotoButton')
             ) return;
-            document.getElementById('image').click();
+            
+            fileInput.click();
+            console.log('Drop zone clicked to open file input');
         });
 
         uploadButton.addEventListener('click', () => {
-            document.getElementById('image').click();
+            fileInput.click();
+            console.log('Upload button clicked');
         });
 
         fileInput.addEventListener('change', () => {
