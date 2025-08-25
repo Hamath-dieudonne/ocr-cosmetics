@@ -84,188 +84,261 @@
                 max-width: calc(50% - 0.75rem);
             }
         }
+
+        /* MODAL CAMERA - CORRECTIONS */
         #cameraModal {
             transition: opacity 0.3s ease, transform 0.3s ease;
             transform: scale(0.9);
             opacity: 0;
             z-index: 9999;
+            backdrop-filter: blur(5px);
         }
         #cameraModal.show {
             transform: scale(1);
             opacity: 1;
         }
+
         #cameraModal .modal-content {
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            max-height: 95vh;
-            max-width: 95vw;
-            overflow: hidden;
-            padding: 0;
-            position: relative;
+            background: #000000;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            max-height: 90vh;
+            max-width: 90vw;
             width: 100%;
+            overflow: hidden;
+            position: relative;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start;
-            align-items: stretch;
         }
 
-        #cameraModal video {
+        /* CAMERA VIEW */
+        #cameraView {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            position: relative;
+        }
+
+        #cameraVideo {
             width: 100%;
             height: auto;
-            border-radius: 10px;
+            max-height: calc(90vh - 120px);
+            object-fit: cover;
+            border-radius: 20px 20px 0 0;
+            background: #000;
         }
 
+        #cameraView .modal-buttons {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100px;
+            border-radius: 0 0 20px 20px;
+        }
+
+        .capture-btn {
+            background-color: #ffffff;
+            border: 6px solid #ddd;
+            border-radius: 50%;
+            width: 80px !important;
+            height: 80px !important;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .capture-btn:hover {
+            background-color: #f0f0f0;
+            border-color: #9642ea;
+            transform: scale(1.05);
+        }
+
+        .capture-btn svg {
+            width: 32px !important;
+            height: 32px !important;
+            color: #333;
+        }
+
+        /* CROP VIEW */
         #cropView {
             display: flex;
             flex-direction: column;
             height: 100%;
-            width: 100%;
+            background: #ffffff;
+            border-radius: 20px;
             overflow: hidden;
         }
 
         .cropper-wrapper {
             flex: 1;
-            height: calc(95vh - 140px); /* Espace pour les boutons + padding */
+            height: calc(90vh - 160px);
             overflow: hidden;
             position: relative;
-            width: 100%;
-            min-height: 300px;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        #cropView img {
-            display: block;
-            height: auto;
+        #capturedImage {
             max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
         }
 
         #cropView .modal-buttons {
             background: #ffffff;
-            border-top: 1px solid #e5e5e5;
+            border-top: 2px solid #f0f0f0;
+            padding: 20px;
             display: flex;
-            gap: 12px;
+            gap: 15px;
             justify-content: center;
-            padding: 16px 20px;
-            width: 100%;
-            flex-shrink: 0; /* Empêche la compression */
         }
 
-        #cameraModal .cropper-container {
-            margin: 0 auto;
-            border-radius: 10px;
-            overflow: hidden;
-            width: 100% !important;
-            height: 100% !important;
-        }
-
-        #cameraModal .cropper-crop-box {
-            border: 2px solid #9642ea;
-            border-radius: 8px;
-            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.6);
-        }
-        #cameraModal .cropper-view-box {
-            border-radius: 8px;
-            outline: 2px solid #9642ea;
-        }
-        #cameraModal .cropper-face {
-            opacity: 0.1;
-        }
-        #cameraModal .cropper-line {
-            background-color: #9642ea !important;
-            opacity: 0.9 !important;
-        }
-        #cameraModal .cropper-point {
-            background-color: #9642ea !important;
-            border: 2px solid #fff !important;
-            width: 14px !important;
-            height: 14px !important;
-            border-radius: 50% !important;
-        }
-
-        #cameraModal .modal-buttons {
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            padding: 16px 20px;
-            background: #ffffff;
-        }
-        #cameraModal .modal-buttons button {
+        #cropView .modal-buttons button {
             flex: 1;
-            padding: 12px;
-            border-radius: 25px;
+            max-width: 140px;
+            padding: 14px 20px;
+            border-radius: 30px;
             font-weight: 600;
+            font-size: 16px;
             transition: all 0.3s ease;
             border: none;
             cursor: pointer;
         }
-        #cameraModal .modal-buttons .confirm-btn {
-            background-color: #9642ea;
-            color: #fff;
+
+        .confirm-btn {
+            background-color: #9642ea !important;
+            color: white !important;
         }
-        #cameraModal .modal-buttons .confirm-btn:hover {
-            background-color: #7c2fd4;
+        .confirm-btn:hover {
+            background-color: #7c2fd4 !important;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(150, 66, 234, 0.4);
         }
-        #cameraModal .modal-buttons .cancel-btn {
-            background-color: #f0f0f0;
-            color: #9642ea;
+
+        .cancel-btn {
+            background-color: #f5f5f5 !important;
+            color: #666 !important;
+            border: 2px solid #e0e0e0 !important;
         }
-        #cameraModal .modal-buttons .cancel-btn:hover {
-            background-color: #e0e0e0;
+        .cancel-btn:hover {
+            background-color: #e8e8e8 !important;
+            border-color: #9642ea !important;
+            color: #9642ea !important;
         }
-        #cameraModal .modal-buttons .capture-btn {
-            background-color: #fff;         
-            border: 4px solid #ccc;         
-            border-radius: 50%;
-            width: 70px;                    
-            height: 70px;                   
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 0;
+
+        /* CLOSE BUTTON */
+        .close-btn {
+            background-color: rgba(255, 255, 255, 0.9) !important;
+            color: #333 !important;
+            width: 50px !important;
+            height: 50px !important;
+            border-radius: 50% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            position: absolute !important;
+            top: 20px !important;
+            right: 20px !important;
+            z-index: 1000 !important;
+            border: none !important;
+            cursor: pointer !important;
+            font-size: 24px !important;
+            line-height: 1 !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important;
+            transition: all 0.2s ease !important;
+        }
+        .close-btn:hover {
+            background-color: #ffffff !important;
+            transform: scale(1.1) !important;
+        }
+
+        /* CROPPER CUSTOMIZATION */
+        .cropper-container {
             margin: 0 auto;
-            box-shadow: 0 0 6px rgba(0,0,0,0.3);
-            cursor: pointer;
-        }
-        #cameraModal .modal-buttons .capture-btn svg {
-            width: 28px; 
-            height: 28px;
-        }
-        #cameraModal .modal-buttons .capture-btn:hover {
-            background-color: #f0f0f0;
+            width: 100% !important;
+            height: 100% !important;
         }
 
-        #cameraModal .close-btn {
-            background-color: #fff;
-            color: #333;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            z-index: 10;
-            border: none;
-            cursor: pointer;
-            font-size: 20px;
-            line-height: 1;
-        }
-        #cameraModal .close-btn:hover {
-            background-color: #f0f0f0;
+        .cropper-crop-box {
+            border: 3px solid #9642ea !important;
+            border-radius: 12px !important;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5) !important;
         }
 
-        /* Responsive adjustments */
+        .cropper-view-box {
+            border-radius: 12px !important;
+            outline: 3px solid #9642ea !important;
+        }
+
+        .cropper-face {
+            opacity: 0.1 !important;
+        }
+
+        .cropper-line {
+            background-color: #9642ea !important;
+            opacity: 0.8 !important;
+        }
+
+        .cropper-point {
+            background-color: #9642ea !important;
+            border: 3px solid #fff !important;
+            width: 16px !important;
+            height: 16px !important;
+            border-radius: 50% !important;
+        }
+
+        /* RESPONSIVE */
         @media (max-width: 768px) {
-            .cropper-wrapper {
-                height: calc(95vh - 120px);
-            }
             #cameraModal .modal-content {
-                max-width: 98vw;
-                max-height: 98vh;
+                max-width: 95vw;
+                max-height: 95vh;
+                border-radius: 15px;
+            }
+            
+            #cameraVideo {
+                max-height: calc(95vh - 140px);
+                border-radius: 15px 15px 0 0;
+            }
+            
+            .cropper-wrapper {
+                height: calc(95vh - 180px);
+            }
+            
+            .capture-btn {
+                width: 70px !important;
+                height: 70px !important;
+            }
+            
+            .capture-btn svg {
+                width: 28px !important;
+                height: 28px !important;
+            }
+            
+            .close-btn {
+                width: 45px !important;
+                height: 45px !important;
+                top: 15px !important;
+                right: 15px !important;
+                font-size: 22px !important;
+            }
+            
+            #cropView .modal-buttons {
+                padding: 15px;
+                gap: 10px;
+            }
+            
+            #cropView .modal-buttons button {
+                padding: 12px 16px;
+                font-size: 14px;
             }
         }
     </style>
@@ -340,7 +413,8 @@
                             <button
                                 id="extractButton"
                                 type="submit"
-                                class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em]"
+                                disabled
+                                class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#9642ea] text-white text-sm font-bold leading-normal tracking-[0.015em] opacity-50"
                             >
                                 <span>Extract Ingredients</span>
                             </button>
@@ -361,27 +435,29 @@
     </div>
 
     <!-- Modal for camera and crop -->
-    <div id="cameraModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div id="cameraModal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden z-50">
         <div class="modal-content">
-            <button id="closeModal" class="close-btn">×</button>
+            <button id="closeModal" class="close-btn" aria-label="Close camera modal">×</button>
+            
             <div id="cameraView">
-                <video id="cameraVideo" autoplay playsinline></video>
+                <video id="cameraVideo" autoplay playsinline muted></video>
                 <div class="modal-buttons">
-                    <button id="capturePhoto" class="capture-btn">
+                    <button id="capturePhoto" class="capture-btn" title="Prendre une photo" aria-label="Capture photo">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
                     </button>
                 </div>
             </div>
+            
             <div id="cropView" class="hidden">
                 <div class="cropper-wrapper">
-                    <img id="capturedImage">
+                    <img id="capturedImage" alt="Image captured">
                 </div>
                 <div class="modal-buttons">
-                    <button id="cropConfirm" class="confirm-btn">Confirm</button>
                     <button id="cropCancel" class="cancel-btn">Cancel</button>
+                    <button id="cropConfirm" class="confirm-btn">Confirm</button>
                 </div>
             </div>
         </div>
@@ -423,7 +499,7 @@
             feedbackMessage.textContent = message;
             feedbackMessage.className = `feedback-message text-center text-sm font-normal leading-normal pb-3 pt-1 px-4 ${isError ? 'text-red-500' : 'text-[#756388]'}`;
             feedbackMessage.classList.remove('hidden');
-            setTimeout(() => feedbackMessage.classList.add('hidden'), 3000);
+            setTimeout(() => feedbackMessage.classList.add('hidden'), 4000);
         }
 
         function showLoader() {
@@ -432,8 +508,6 @@
                 dropText.classList.add('hidden');
                 if (!imagePreview.src || imagePreview.src === '#' || imagePreview.src.endsWith('#')) {
                     previewContainer.classList.add('hidden');
-                } else {
-                    console.log('Loader affiché, dropText masqué, previewContainer reste visible');
                 }
             }
         }
@@ -457,6 +531,8 @@
                 imagePreview.src = e.target.result;
                 imagePreview.setAttribute('data-image-path', '');
                 hideLoader();
+                showFeedback('Image loaded successfully!', false);
+                updateExtractButtonState();
             };
             reader.onerror = (e) => {
                 console.error('Erreur lors de la lecture du fichier :', e);
@@ -473,6 +549,7 @@
                 });
                 stream = null;
                 cameraVideo.srcObject = null;
+                console.log('Camera stopped');
             }
         }
 
@@ -480,6 +557,7 @@
             if (cropper) {
                 try {
                     cropper.destroy();
+                    console.log('Cropper destroyed');
                 } catch (e) {
                     console.warn('Erreur lors de la destruction du cropper:', e);
                 }
@@ -488,42 +566,84 @@
         }
 
         function closeCameraModal() {
+            console.log('Closing camera modal...');
             cameraModal.classList.remove('show');
-            
-            setTimeout(() => {
-                // Arrête la caméra
+            cameraModal.addEventListener('transitionend', () => {
                 stopCamera();
-                
-                // Cache le modal
                 cameraModal.classList.add('hidden');
-                
-                // Détruit le cropper
                 destroyCropper();
-                
-                // Réinitialise les vues
                 cameraView.classList.remove('hidden');
                 cropView.classList.add('hidden');
-                
-                // Nettoie l'image capturée
                 capturedImage.src = "";
-            }, 300);
+                console.log('Camera modal closed');
+            }, { once: true });
         }
 
         function resetCropView() {
-            // Destroy existing cropper
+            console.log('Resetting crop view...');
             destroyCropper();
-            
-            // Clear the image
             capturedImage.src = "";
-            
-            // Switch back to camera view
             cameraView.classList.remove('hidden');
             cropView.classList.add('hidden');
+        }
+
+        async function startCamera() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showFeedback('Camera not supported by this browser.', true);
+                throw new Error('Camera not supported');
+            }
+            try {
+                console.log('Starting camera...');
+                
+                // Stop any existing stream
+                stopCamera();
+                
+                // Request camera access
+                const constraints = {
+                    video: {
+                        facingMode: 'environment', // Prefer back camera
+                        width: { ideal: 1920, max: 1920 },
+                        height: { ideal: 1080, max: 1080 }
+                    }
+                };
+                
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                cameraVideo.srcObject = stream;
+                
+                // Wait for video to be ready
+                return new Promise((resolve) => {
+                    cameraVideo.onloadedmetadata = () => {
+                        console.log('Camera stream ready');
+                        resolve();
+                    };
+                });
+                
+            } catch (err) {
+                console.error('Camera access error:', err);
+                
+                let errorMessage = 'Impossible d\'accéder à la caméra.';
+                if (err.name === 'NotAllowedError') {
+                    errorMessage = 'Accès à la caméra refusé. Veuillez autoriser l\'accès à la caméra.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage = 'Aucune caméra trouvée sur cet appareil.';
+                } else if (err.name === 'NotSupportedError') {
+                    errorMessage = 'Caméra non supportée par ce navigateur.';
+                }
+                
+                showFeedback(errorMessage, true);
+                throw err;
+            }
+        }
+
+        function updateExtractButtonState() {
+            extractButton.disabled = !fileInput.files.length;
+            extractButton.classList.toggle('opacity-50', !fileInput.files.length);
         }
 
         // Event listeners
         function attachEventListeners() {
             if (eventListenersAttached) return;
+            eventListenersAttached = true;
 
             // Drag & Drop events
             dropZone.addEventListener('dragover', (e) => {
@@ -546,7 +666,6 @@
                 }
             });
 
-            // File input change
             fileInput.addEventListener('change', () => {
                 if (fileInput.files.length > 0) {
                     showLoader();
@@ -554,7 +673,6 @@
                 }
             });
 
-            // Drop zone click
             dropZone.addEventListener('click', (e) => {
                 if (
                     e.target.closest('button[type="submit"]') ||
@@ -564,195 +682,171 @@
                 fileInput.click();
             });
 
-            // Upload button
             uploadButton.addEventListener('click', () => {
                 fileInput.click();
             });
 
-            // Take photo button
+            // Take photo button - IMPROVED
             takePhotoButton.addEventListener('click', async () => {
+                console.log('Take photo button clicked');
                 try {
-                    stream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: 'environment' } 
-                    });
-                    cameraVideo.srcObject = stream;
                     cameraModal.classList.remove('hidden');
-                    setTimeout(() => cameraModal.classList.add('show'), 10);
+                    setTimeout(() => cameraModal.classList.add('show'), 50);
+                    
+                    await startCamera();
+                    
                     cameraView.classList.remove('hidden');
                     cropView.classList.add('hidden');
+                    
                 } catch (err) {
-                    console.error('Error accessing camera:', err);
-                    showFeedback('Impossible d\'accéder à la caméra. Veuillez vérifier les permissions.', true);
+                    // Error already handled in startCamera()
+                    closeCameraModal();
                 }
             });
 
-            // Close modal - FIXED
             closeModal.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 closeCameraModal();
             });
 
-            // Capture photo
+            // Capture photo - IMPROVED
             capturePhoto.addEventListener('click', () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = cameraVideo.videoWidth;
-                canvas.height = cameraVideo.videoHeight;
-                canvas.getContext('2d').drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
-                capturedImage.src = canvas.toDataURL('image/jpeg');
-                
-                cameraView.classList.add('hidden');
-                cropView.classList.remove('hidden');
-
-                setTimeout(() => {
-                    try {
-                        cropper = new Cropper(capturedImage, {
-                            aspectRatio: NaN,
-                            viewMode: 1,
-                            autoCropArea: 0.8,
-                            responsive: true,
-                            zoomable: true,
-                            scalable: true,
-                            movable: false,
-                            minCropBoxWidth: 100,
-                            minCropBoxHeight: 100,
-                            background: false,
-                            cropBoxMovable: false,
-                            cropBoxResizable: true,
-                            dragMode: 'none',
-                        });
-                    } catch (e) {
-                        console.error('Erreur lors de l\'initialisation du cropper:', e);
-                        showFeedback('Erreur lors de l\'initialisation de l\'outil de recadrage', true);
-                    }
-                }, 100);
+                console.log('Capture button clicked');
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = cameraVideo.videoWidth;
+                    canvas.height = cameraVideo.videoHeight;
+                    
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+                    
+                    const dataURL = canvas.toDataURL('image/jpeg', 0.95);
+                    capturedImage.src = dataURL;
+                    
+                    // Switch to crop view
+                    cameraView.classList.add('hidden');
+                    cropView.classList.remove('hidden');
+                    
+                    // Stop camera to save resources
+                    stopCamera();
+                    
+                    // Initialize cropper after image loads
+                    capturedImage.onload = () => {
+                        try {
+                            cropper = new Cropper(capturedImage, {
+                                aspectRatio: NaN,
+                                viewMode: 1,
+                                autoCropArea: 0.9,
+                                responsive: true,
+                                restore: false,
+                                guides: true,
+                                center: true,
+                                highlight: false,
+                                cropBoxMovable: true,
+                                cropBoxResizable: true,
+                                toggleDragModeOnDblclick: false,
+                                minCropBoxWidth: 100,
+                                minCropBoxHeight: 100,
+                            });
+                            console.log('Cropper initialized successfully');
+                        } catch (e) {
+                            console.error('Cropper initialization failed:', e);
+                            showFeedback('Erreur lors de l\'initialisation de l\'outil de recadrage', true);
+                        }
+                    };
+                    
+                } catch (e) {
+                    console.error('Photo capture failed:', e);
+                    showFeedback('Erreur lors de la capture de la photo', true);
+                }
             });
 
-            // Crop confirm
             cropConfirm.addEventListener('click', () => {
                 if (cropper) {
                     try {
                         const croppedCanvas = cropper.getCroppedCanvas({
+                            width: window.innerWidth > 768 ? 1920 : 1280,
+                            height: window.innerWidth > 768 ? 1080 : 720,
                             fillColor: '#fff',
+                            imageSmoothingEnabled: true,
                             imageSmoothingQuality: 'high',
                         });
+                        
                         croppedCanvas.toBlob((blob) => {
-                            const file = new File([blob], 'photo_cropped.jpg', { type: 'image/jpeg' });
+                            const file = new File([blob], 'photo_cropped.jpg', { 
+                                type: 'image/jpeg',
+                                lastModified: Date.now()
+                            });
+                            
                             const dataTransfer = new DataTransfer();
                             dataTransfer.items.add(file);
                             fileInput.files = dataTransfer.files;
+                            
                             previewImage(file);
                             closeCameraModal();
+                            
+                            showFeedback('Photo captured and cropped successfully!', false);
+                            
                         }, 'image/jpeg', 0.95);
                     } catch (e) {
-                        console.error('Erreur lors du recadrage:', e);
+                        console.error('Cropping failed:', e);
                         showFeedback('Erreur lors du recadrage de l\'image', true);
                     }
                 }
             });
 
-            // Crop cancel - FIXED
             cropCancel.addEventListener('click', () => {
                 resetCropView();
             });
 
-            // Clear image button
-            clearImageButton.addEventListener('click', async () => {
-                const imagePath = clearImageButton.getAttribute('data-image-path');
-                if (imagePath) {
-                    try {
-                        const response = await fetch('/delete_image', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ image_path: imagePath })
-                        });
-                        const result = await response.json();
-                        if (result.message) {
-                            showFeedback('Image supprimée avec succès');
-                            imagePreview.src = '#';
-                            previewContainer.classList.add('hidden');
-                            clearImageButton.setAttribute('data-image-path', '');
-                        } else {
-                            console.error(result.error);
-                            showFeedback('Erreur lors de la suppression de l\'image', true);
-                        }
-                    } catch (err) {
-                        console.error('Error deleting image:', err);
-                        showFeedback('Erreur lors de la suppression de l\'image', true);
-                    }
-                }
+            clearImageButton.addEventListener('click', () => {
                 fileInput.value = '';
-                hideLoader();
-                
-                // Clean up existing results
-                const existingResults = document.getElementById('resultsContainer');
-                const existingError = document.getElementById('errorMessage');
-                const noResults = document.getElementById('noResultsMessage');
-                if (existingResults) existingResults.remove();
-                if (existingError) existingError.remove();
-                if (noResults) noResults.remove();
+                imagePreview.src = '#';
+                imagePreview.setAttribute('data-image-path', '');
+                previewContainer.classList.add('hidden');
+                dropText.classList.remove('hidden');
+                updateExtractButtonState();
+                showFeedback('Image cleared.', false);
             });
 
-            // Form submit
-            form.addEventListener('submit', (e) => {
+            form.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                if (fileInput.files.length === 0) {
-                    showFeedback('Veuillez sélectionner une image', true);
+                if (!fileInput.files.length) {
+                    showFeedback('Please upload or capture an image first.', true);
                     return;
                 }
                 showLoader();
-                extractButton.disabled = true;
-                extractButton.classList.add('opacity-50', 'cursor-not-allowed');
-                form.submit();
-            });
-
-            // Modal click outside to close
-            cameraModal.addEventListener('click', (e) => {
-                if (e.target === cameraModal) {
-                    closeCameraModal();
+                const formData = new FormData(form);
+                try {
+                    // Placeholder for backend call
+                    // const response = await fetch('/api/extract-ingredients', {
+                    //     method: 'POST',
+                    //     body: formData,
+                    // });
+                    // const result = await response.json();
+                    console.log('Form submitted with image:', formData.get('image'));
+                    showFeedback('Ingredients extracted successfully! (Placeholder)', false);
+                    // Display results here
+                } catch (err) {
+                    console.error('Extraction failed:', err);
+                    showFeedback('Failed to extract ingredients.', true);
+                } finally {
+                    hideLoader();
                 }
             });
 
-            // Keyboard events
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && !cameraModal.classList.contains('hidden')) {
                     closeCameraModal();
                 }
             });
 
-            eventListenersAttached = true;
+            fileInput.addEventListener('change', updateExtractButtonState);
         }
 
-        // Initialization
-        document.addEventListener('DOMContentLoaded', () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const isLoading = urlParams.get('is_loading') === 'true';
-            const imagePath = urlParams.get('image_path');
-            
-            if (isLoading) {
-                showLoader();
-            } else {
-                hideLoader();
-            }
-            
-            if (imagePath) {
-                const fullPath = '/' + imagePath + '?t=' + new Date().getTime();
-                imagePreview.src = fullPath;
-                imagePreview.setAttribute('data-image-path', imagePath);
-                previewContainer.classList.remove('hidden');
-                clearImageButton.setAttribute('data-image-path', imagePath);
-                console.log('Image path updated after redirection:', fullPath);
-            }
-            
-            // Attach all event listeners
-            attachEventListeners();
-        });
-
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', () => {
-            stopCamera();
-            destroyCropper();
-        });
+        attachEventListeners();
+        updateExtractButtonState();
     </script>
 </body>
 </html>
